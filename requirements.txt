@@ -1,0 +1,21 @@
+# PokePal Project - Core Requirements
+# 開発環境で必要な基本パッケージ
+
+# Azure IoT
+azure-iot-device>=2.12.0
+azure-identity>=1.23.0
+azure-keyvault-secrets>=4.9.0
+azure-storage-blob>=12.14.0
+azure-cosmos>=4.3.0
+
+# AI Services (現在使用中)
+openai>=1.35.0
+tiktoken>=0.3.3
+
+# Core Dependencies
+numpy==1.26.4  # Whisper compatibility
+python-dotenv>=1.0.0
+httpx>=0.28.0
+
+# Testing
+pytest>=7.2.0
