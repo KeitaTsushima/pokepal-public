@@ -1,0 +1,29 @@
+# Use base image (pre-built)
+FROM your-registry.azurecr.io/voice-conversation-base:1.1
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements.txt and install dependencies
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code (maintain directory structure)
+COPY main.py ./
+
+# Copy each layer directory
+COPY domain ./domain
+COPY application ./application
+COPY adapters ./adapters
+COPY infrastructure ./infrastructure
+
+# Create directory for memory files
+RUN mkdir -p /app/memories
+
+# Set PYTHONPATH
+ENV PYTHONPATH=/app
+
+# Environment variables can be configured as needed during deployment
+
+# Entry point
+CMD ["python", "-u", "main.py"]
