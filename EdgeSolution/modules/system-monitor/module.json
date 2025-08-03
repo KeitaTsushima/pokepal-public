@@ -1,0 +1,15 @@
+{
+  "$schema-version": "0.0.1",
+  "description": "System monitoring module for PokePal framework",
+  "image": {
+    "repository": "your-registry.azurecr.io/system-monitor",
+    "tag": {
+      "version": "0.0.1",
+      "platforms": {
+        "arm64v8": "./Dockerfile.arm64v8"
+      }
+    },
+    "buildOptions": []
+  },
+  "language": "python"
+}
