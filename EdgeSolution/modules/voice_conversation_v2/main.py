@@ -290,7 +290,7 @@ class Application:
         # - Close IoT Hub connection (azure_iot_device.IoTHubModuleClient)
         # - Close OpenAI HTTP client connections
         # - Audio device resources (microphone/speaker)
-        # - Domain layer resources via conversation.end() (tiktoken, Deque, etc.)
+        # - Domain layer resources via conversation.end_conversation() (tiktoken, Deque, etc.)
         # - Temporary file cleanup
         # Implementation order: Add cleanup() methods to each layer → integrated stop() implementation
         
