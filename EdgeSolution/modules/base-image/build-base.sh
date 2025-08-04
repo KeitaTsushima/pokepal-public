@@ -4,7 +4,7 @@
 echo "🏗️ Building PokePal base image..."
 echo "⏱️ This only needs to be run once (takes 10-15 minutes)"
 
-ACR_NAME="pokepalregistry"
+ACR_NAME="${REGISTRY_NAME:-your-registry}"
 BASE_IMAGE="${ACR_NAME}.azurecr.io/pokepal-base:latest-arm64v8"
 
 echo "📝 Logging into ACR..."
