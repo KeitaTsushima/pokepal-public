@@ -1,0 +1,564 @@
+trigger:
+  branches:
+    include:
+      - '*'  # Trigger on all branches
+
+pr:
+  branches:
+    include:
+      - '*'
+
+variables:
+  - name: system.debug
+    value: 'false'
+  - group: Env-Vars
+  - group: KeyVault-Secrets
+  - name: DOCKER_REGISTRY_SERVICE_CONNECTION
+    value: 'YOUR_SERVICE_CONNECTION' 
+  - name: IMAGE_PLATFORM
+    value: 'arm64v8'
+  - name: IOT_HUB_NAME
+    value: 'YOUR_IOT_HUB_NAME'
+  - name: BASE_VERSION
+    value: '1.4'  # Central Base Image version - update when base-image changes (azure-iot-device 2.14.0)
+
+pool:
+  vmImage: 'ubuntu-22.04'
+
+jobs:
+# === Job 1: Setup and Base Image ===
+- job: SetupAndBase
+  displayName: 'Setup Environment and Build Base Image'
+  steps:
+  - checkout: self
+    fetchDepth: 0
+  
+  - task: UsePythonVersion@0
+    displayName: 'Use Python 3.11'
+    inputs:
+      versionSpec: '3.11'
+      addToPath: true
+
+  - script: |
+      python --version
+      sudo apt-get update
+      sudo apt-get install -y jq
+      pip install urllib3
+    displayName: 'Install required tools'
+
+  - task: AzureCLI@2
+    displayName: 'Login to ACR via Azure CLI'
+    inputs:
+      azureSubscription: '$(DOCKER_REGISTRY_SERVICE_CONNECTION)'
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        echo "=== Attempting ACR connection ==="
+        az acr login --name YOUR_ACR_NAME 
+
+  # --- Base Image Build ---
+  - task: AzureCLI@2
+    displayName: 'Build Base Images'
+    inputs:
+      azureSubscription: '$(DOCKER_REGISTRY_SERVICE_CONNECTION)'
+      scriptType: bash
+      scriptLocation: inlineScript
+      workingDirectory: '$(Build.SourcesDirectory)/EdgeSolution/modules'
+      inlineScript: |
+        set -euo pipefail
+        
+        # Check voice-conversation module base image
+        if [ -f "base-image/Dockerfile" ]; then
+          echo "=== Building voice-conversation base image ==="
+          cd base-image
+          
+          # Central Base Image version management (Pipeline controls all versions)
+          BASE_VERSION="$(BASE_VERSION)"
+          
+          echo "Base image version: $BASE_VERSION"
+          
+          # Check base image existence using ACR API
+          BASE_IMAGE="YOUR_ACR_NAME.azurecr.io/voice-conversation-base:$BASE_VERSION"
+          BASE_IMAGE_NAME="voice-conversation-base"
+          
+          # Check image existence using Azure CLI
+          if az acr repository show-tags --name YOUR_ACR_NAME --repository "$BASE_IMAGE_NAME" -o tsv | grep -Fxq "$BASE_VERSION"; then
+            echo "Base image $BASE_IMAGE already exists, skipping build"
+          else
+            echo "Building base image $BASE_IMAGE"
+            # Setup cross-platform build environment
+            docker run --rm tonistiigi/binfmt --install arm64 || echo "binfmt setup failed (non-privileged environment)"
+            docker buildx create --use || true
+            docker buildx build --platform linux/arm64 \
+              --cache-from type=registry,ref=YOUR_ACR_NAME.azurecr.io/cache:base-buildcache \
+              --cache-to type=registry,ref=YOUR_ACR_NAME.azurecr.io/cache:base-buildcache,mode=max \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
+              -f Dockerfile -t "$BASE_IMAGE" . --push
+            
+            # Security scan with Trivy (optimized)
+            echo "Running security scan on base image..."
+            if [ "${BUILD_SOURCEBRANCH}" = "refs/heads/main" ]; then
+              # Production: diff only + skip DB update
+              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                aquasec/trivy:latest image --skip-db-update --severity HIGH,CRITICAL --exit-code 1 "$BASE_IMAGE"
+            else
+              # Validation: warnings only + skip DB update
+              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                aquasec/trivy:latest image --skip-db-update --severity HIGH,CRITICAL --exit-code 1 "$BASE_IMAGE" || \
+                echo "WARNING: Security vulnerabilities found in base image"
+            fi
+          fi
+          
+          cd ..
+        fi
+
+# === Job 2: Build Modules in Parallel ===
+- job: BuildModules
+  displayName: 'Build All Modules in Parallel'
+  dependsOn: SetupAndBase
+  strategy:
+    matrix:
+      voice_conversation:
+        MODULE_DIR: voice_conversation_v2
+        MODULE_NAME: voice-conversation
+      system_monitor:
+        MODULE_DIR: system-monitor  
+        MODULE_NAME: system-monitor
+    maxParallel: 2
+  steps:
+  - checkout: self
+    fetchDepth: 0  # For change detection and full history
+  - task: UsePythonVersion@0
+    displayName: 'Use Python 3.11'
+    inputs:
+      versionSpec: '3.11'
+      addToPath: true
+
+  - script: |
+      python --version
+      sudo apt-get update
+      sudo apt-get install -y jq
+      pip install urllib3
+    displayName: 'Install required tools'
+
+  - task: AzureCLI@2
+    displayName: 'Login to ACR via Azure CLI'
+    inputs:
+      azureSubscription: '$(DOCKER_REGISTRY_SERVICE_CONNECTION)'
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        echo "=== Attempting ACR connection ==="
+        az acr login --name YOUR_ACR_NAME 
+
+# --- Single Module Build ---
+  - task: Bash@3
+    name: publishImage
+    displayName: 'Build Single Module'
+    inputs:
+      targetType: 'inline'
+      workingDirectory: '$(Build.SourcesDirectory)/EdgeSolution/modules'
+      script: |
+        set -euo pipefail
+        
+        # Use matrix variables
+        MODULE_DIR="$(MODULE_DIR)"
+        MODULE_NAME="$(MODULE_NAME)"
+        echo "##[section]Starting build for module: $MODULE_NAME ($(date '+%H:%M:%S'))"
+        BUILD_START=$(date +%s)
+        
+        # Git hash-based tagging and change detection (use latest commit from current branch)
+        MODULE_HASH=$(git rev-parse HEAD)
+        MODULE_SHORT_HASH=${MODULE_HASH:0:7}
+        echo "Module hash: $MODULE_SHORT_HASH"
+        
+        # Debug: Show git hash extraction
+        echo "Git hash extraction debug:"
+        echo "  MODULE_DIR: $MODULE_DIR"
+        echo "  Current branch: $(git branch --show-current || echo 'detached')"
+        echo "  MODULE_HASH: $MODULE_HASH"
+        echo "  MODULE_SHORT_HASH: $MODULE_SHORT_HASH"
+        
+        cd "$MODULE_DIR"
+        MODULE_JSON_PATH="./module.json"
+        
+        if [ ! -f "$MODULE_JSON_PATH" ]; then
+          echo "Error: $MODULE_JSON_PATH not found for $MODULE_NAME"
+          exit 1
+        fi
+        
+        # Read information from module.json
+        REPO=$(jq -r '.image.repository' "$MODULE_JSON_PATH")
+        VERSION=$(jq -r '.image.tag.version' "$MODULE_JSON_PATH")
+        DOCKERFILE_PATH=$(jq -r ".image.tag.platforms.\"$(IMAGE_PLATFORM)\"" "$MODULE_JSON_PATH")
+        DOCKERFILE_NAME=${DOCKERFILE_PATH#./}
+        
+        # Use Git hash for deterministic tagging (include BASE_VERSION)
+        FULL_IMAGE_NAME="${REPO}:${VERSION}-$(IMAGE_PLATFORM)-b$(BASE_VERSION)-${MODULE_SHORT_HASH}"
+        
+        # Convert module name to uppercase for variable name
+        MODULE_VAR=$(echo "$MODULE_NAME" | tr '[:lower:]-' '[:upper:]_')
+        
+        # Check if image with this hash already exists (skip if unchanged)
+        if az acr repository show-tags --name YOUR_ACR_NAME --repository "${REPO#YOUR_ACR_NAME.azurecr.io/}" -o tsv 2>/dev/null | grep -Fxq "${VERSION}-$(IMAGE_PLATFORM)-b$(BASE_VERSION)-${MODULE_SHORT_HASH}"; then
+          echo "Module unchanged (hash: $MODULE_SHORT_HASH, base: $(BASE_VERSION)), skipping build"
+          echo "##vso[task.setvariable variable=Image;isOutput=true]${FULL_IMAGE_NAME}"
+          exit 0
+        fi
+
+        echo "##[section]Building Docker image for $MODULE_NAME ($(date '+%H:%M:%S'))"
+        DOCKER_START=$(date +%s)
+        echo "  Module: ${MODULE_NAME}"
+        echo "  Dockerfile: ${DOCKERFILE_NAME}"
+        echo "  Tag: ${FULL_IMAGE_NAME}"
+        
+        # Docker buildx build and push (pass Base Version dynamically)
+        # Setup cross-platform build environment
+        docker run --rm tonistiigi/binfmt --install arm64 || echo "binfmt setup failed (non-privileged environment)"
+        docker buildx create --use || true
+        docker buildx build --platform linux/arm64 \
+          --cache-from type=registry,ref=YOUR_ACR_NAME.azurecr.io/cache:${MODULE_NAME}-buildcache \
+          --cache-to type=registry,ref=YOUR_ACR_NAME.azurecr.io/cache:${MODULE_NAME}-buildcache,mode=max \
+          --build-arg BUILDKIT_INLINE_CACHE=1 \
+          --build-arg BASE_VERSION=$(BASE_VERSION) \
+          -f "${DOCKERFILE_NAME}" -t "${FULL_IMAGE_NAME}" . --push
+        
+        DOCKER_END=$(date +%s)
+        DOCKER_DURATION=$((DOCKER_END - DOCKER_START))
+        echo "##[section]Docker build completed in ${DOCKER_DURATION}s ($(date '+%H:%M:%S'))"
+        
+        # Security scan with Trivy (optimized)
+        echo "Running security scan on ${MODULE_NAME} module..."
+        if [ "${BUILD_SOURCEBRANCH}" = "refs/heads/main" ]; then
+          # Production: diff only + skip DB update
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image --skip-db-update --severity HIGH,CRITICAL --exit-code 1 "${FULL_IMAGE_NAME}"
+        else
+          # Validation: warnings only + skip DB update
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image --skip-db-update --severity HIGH,CRITICAL --exit-code 1 "${FULL_IMAGE_NAME}" || \
+            echo "WARNING: Security vulnerabilities found in ${MODULE_NAME} module"
+        fi
+        
+        # Save to pipeline variables (output for cross-job access)
+        echo "##vso[task.setvariable variable=Image;isOutput=true]${FULL_IMAGE_NAME}"
+        
+        BUILD_END=$(date +%s)
+        BUILD_DURATION=$((BUILD_END - BUILD_START))
+        echo "##[section]Module $MODULE_NAME build completed in ${BUILD_DURATION}s total ($(date '+%H:%M:%S'))"
+
+# === Job 3: Deploy and Functions ===
+- job: DeployAndFunctions  
+  displayName: 'Deploy to IoT Edge and Functions'
+  dependsOn: BuildModules
+  variables:
+    IMAGE_VOICE_CONVERSATION: $[ dependencies.BuildModules.outputs['voice_conversation.publishImage.Image'] ]
+    IMAGE_SYSTEM_MONITOR: $[ dependencies.BuildModules.outputs['system_monitor.publishImage.Image'] ]
+  steps:
+  - checkout: self
+    fetchDepth: 0  # For change detection and full history
+  - task: UsePythonVersion@0
+    displayName: 'Use Python 3.11'
+    inputs:
+      versionSpec: '3.11'
+      addToPath: true
+
+  - script: |
+      python --version
+      sudo apt-get update
+      sudo apt-get install -y jq
+      pip install urllib3
+    displayName: 'Install required tools'
+
+  - task: AzureKeyVault@2
+    displayName: 'Fetch secrets from Key Vault'
+    inputs:
+      azureSubscription: '$(DOCKER_REGISTRY_SERVICE_CONNECTION)'
+      KeyVaultName: 'YOUR_KEYVAULT_NAME'
+      SecretsFilter: 'pokepal-acr-password'
+      RunAsPreJob: false
+
+  - task: Bash@3
+    displayName: 'Resolve All Module Placeholders in Manifest'
+    env:
+      IMAGE_VOICE_CONVERSATION: $(IMAGE_VOICE_CONVERSATION)
+      IMAGE_SYSTEM_MONITOR: $(IMAGE_SYSTEM_MONITOR)
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        
+        TEMPLATE_PATH="$(Build.SourcesDirectory)/EdgeSolution/deployment.template.json"
+        RESOLVED_MANIFEST="$(Build.ArtifactStagingDirectory)/deployment.resolved.json"
+        
+        # Copy template
+        cp "$TEMPLATE_PATH" "$RESOLVED_MANIFEST"
+        
+        # Replace placeholders for each module
+        echo "Replacing module placeholders..."
+        
+        # voice-conversation
+        if [ -n "${IMAGE_VOICE_CONVERSATION:-}" ]; then
+          sed -i "s@\${MODULES.voice-conversation}@${IMAGE_VOICE_CONVERSATION}@g" "$RESOLVED_MANIFEST"
+        fi
+        
+        # system-monitor
+        if [ -n "${IMAGE_SYSTEM_MONITOR:-}" ]; then
+          sed -i "s@\${MODULES.system-monitor}@${IMAGE_SYSTEM_MONITOR}@g" "$RESOLVED_MANIFEST"
+        fi
+        
+        echo "Module placeholders resolved"
+        echo "##vso[task.setvariable variable=MODULE_RESOLVED_TEMPLATE_PATH]$RESOLVED_MANIFEST"
+
+  - task: Bash@3
+    displayName: 'Guard: ensure no $[ ] tokens remain'
+    inputs:
+      targetType: 'inline'
+      script: |
+        if grep -q '\$\[' "$(Build.ArtifactStagingDirectory)/deployment.resolved.json"; then
+          echo "ERROR: pipeline expressions remain in manifest"
+          exit 1
+        fi
+        echo "Pipeline expression validation passed"
+
+  - task: Bash@3
+    displayName: 'Create Final Deployment Manifest'
+    env:
+      ACR_USERNAME: YOUR_ACR_NAME
+      ACR_PASSWORD: $(pokepal-acr-password)
+      KEY_VAULT_URL: https://YOUR_KEYVAULT_NAME.vault.azure.net/
+      AZURE_TENANT_ID: $(AZURE_TENANT_ID)
+      AZURE_CLIENT_ID: $(AZURE_CLIENT_ID)
+      AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT: "true"
+      CERT_PATH: /YOUR_CERT.pem
+      OPENAI_SECRET_NAME: openai-api-key
+      AZURE_SPEECH_SECRET_NAME: azure-speech-key
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        
+        # Check if environment variables are set
+        if [ -n "$MODULE_RESOLVED_TEMPLATE_PATH" ]; then
+          # Remove extra characters
+          SOURCE_MANIFEST=$(echo "$MODULE_RESOLVED_TEMPLATE_PATH" | sed "s/'//g")
+        else
+          echo "ERROR: MODULE_RESOLVED_TEMPLATE_PATH not set - previous step failed"
+          exit 1
+        fi
+        
+        FINAL_MANIFEST="$(Build.SourcesDirectory)/config/deployment.json"
+        
+        echo "SOURCE_MANIFEST: $SOURCE_MANIFEST"
+        echo "FINAL_MANIFEST: $FINAL_MANIFEST"
+        
+        # Create config directory (if it doesn't exist)
+        mkdir -p "$(Build.SourcesDirectory)/config"
+        
+        # Debug: Show all environment variables (without sensitive values)
+        echo "=== Environment Variables Debug ==="
+        echo "KEY_VAULT_URL: ${KEY_VAULT_URL:-NOT_SET}"
+        echo "AZURE_TENANT_ID: ${AZURE_TENANT_ID:-NOT_SET}"
+        echo "AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-NOT_SET}"
+        echo "AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT: ${AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT:-NOT_SET}"
+        echo "ACR_USERNAME: ${ACR_USERNAME:-NOT_SET}"
+        echo "ACR_PASSWORD: $([ -n "${ACR_PASSWORD:-}" ] && echo "SET" || echo "NOT_SET")"
+        
+        # Environment variable validation (fail-fast)
+        if [ -z "${ACR_USERNAME:-}" ] || [ -z "${ACR_PASSWORD:-}" ]; then
+          echo "ERROR: ACR credentials not set - deployment will fail"
+          exit 1
+        fi
+        
+        if [ -z "${KEY_VAULT_URL:-}" ]; then
+          echo "ERROR: KEY_VAULT_URL is empty - deployment will fail"
+          exit 1
+        fi
+        
+        if [ -z "${AZURE_TENANT_ID:-}" ] || [ -z "${AZURE_CLIENT_ID:-}" ]; then
+          echo "ERROR: Azure AD credentials not set - deployment will fail"
+          exit 1
+        fi
+        
+        
+        # Safe replacement using jq (handles special characters correctly)
+        tmp_manifest="${FINAL_MANIFEST}.tmp"
+        jq \
+          --arg acr_user "$ACR_USERNAME" \
+          --arg acr_pass "$ACR_PASSWORD" \
+          --arg login_server "YOUR_ACR_NAME.azurecr.io" \
+          --arg keyvault_url "$KEY_VAULT_URL" \
+          --arg tenant "$AZURE_TENANT_ID" \
+          --arg client "$AZURE_CLIENT_ID" \
+          --arg cert "$CERT_PATH" \
+          --arg imds "$AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT" \
+          --arg oname "$OPENAI_SECRET_NAME" \
+          --arg sname "$AZURE_SPEECH_SECRET_NAME" \
+          '
+          # Replace ACR registry credentials
+          .modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials.YOUR_REGISTRY_CRED.username = $acr_user |
+          .modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials.YOUR_REGISTRY_CRED.password = $acr_pass |
+          .modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials.YOUR_REGISTRY_CRED.address = $login_server |
+          
+          # Ensure env object exists before setting environment variables
+          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env //= {} |
+          
+          # Replace environment variables in voice-conversation module (complete set)
+          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.KEY_VAULT_URL.value = $keyvault_url |
+          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.AZURE_TENANT_ID.value = $tenant |
+          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.AZURE_CLIENT_ID.value = $client |
+          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.AZURE_CLIENT_CERTIFICATE_PATH.value = $cert |
+          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT.value = $imds |
+          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.OPENAI_SECRET_NAME.value = $oname |
+          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.AZURE_SPEECH_SECRET_NAME.value = $sname
+          ' "$SOURCE_MANIFEST" > "$tmp_manifest" && mv "$tmp_manifest" "$FINAL_MANIFEST"
+        
+        # Convert createOptions to JSON strings (IoT Hub API requirement)
+        echo "Converting createOptions to JSON strings for IoT Hub API..."
+        jq '
+          .modulesContent."$edgeAgent"."properties.desired".systemModules.edgeHub.settings.createOptions = 
+            (.modulesContent."$edgeAgent"."properties.desired".systemModules.edgeHub.settings.createOptions // {} | tostring) |
+          .modulesContent."$edgeAgent"."properties.desired".systemModules.edgeAgent.settings.createOptions = 
+            (.modulesContent."$edgeAgent"."properties.desired".systemModules.edgeAgent.settings.createOptions // {} | tostring) |
+          .modulesContent."$edgeAgent"."properties.desired".modules |= 
+            with_entries(
+              if .value.settings.createOptions then
+                .value.settings.createOptions = (.value.settings.createOptions | tostring)
+              else . end
+            )
+        ' "$FINAL_MANIFEST" > "${FINAL_MANIFEST}.tmp" && mv "${FINAL_MANIFEST}.tmp" "$FINAL_MANIFEST"
+        
+        # Final verification - Fail if placeholders remain (security requirement)
+        if grep -q '\${[^}]*}' "$FINAL_MANIFEST"; then
+          echo "ERROR: Unresolved \${...} tokens remain in final manifest"
+          grep -o '\${[^}]*}' "$FINAL_MANIFEST"
+          exit 1
+        fi
+        echo "✅ No placeholders found - Security check passed"
+        
+        # Create deployment directory
+        mkdir -p $(Build.SourcesDirectory)/config/deployment.linux
+        cp "$FINAL_MANIFEST" "$(Build.SourcesDirectory)/config/deployment.linux/arm64.json"
+
+  - task: AzureIoTEdge@2
+    displayName: 'Deploy to IoT Edge devices'
+    inputs:
+      action: 'Deploy to IoT Edge devices'
+      deploymentFilePath: '$(Build.SourcesDirectory)/config/deployment.json'
+      azureSubscription: '$(DOCKER_REGISTRY_SERVICE_CONNECTION)'
+      iothubname: '$(IOT_HUB_NAME)'
+      priority: 20
+      deviceOption: 'Multiple Devices'
+      targetcondition: "tags.environment='dev'"
+
+  # Azure Functions Deployment
+  - task: AzureCLI@2
+    displayName: 'Deploy Azure Functions'
+    condition: succeeded()
+    inputs:
+      azureSubscription: '$(DOCKER_REGISTRY_SERVICE_CONNECTION)'
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        echo "=== Starting Azure Functions deployment (optimized) ==="
+        
+        # Deploy Function Apps using zip deployment (faster)
+        cd azure-functions
+        
+        echo "Deploying ConversationLogger with zip deployment..."
+        cd ConversationLogger
+        # Install dependencies locally for zip deployment
+        pip install -r requirements.txt -t .python_packages/lib/site-packages
+        # Create optimized zip (exclude cache files)
+        zip -r ConversationLogger.zip . -x "*.pyc" "__pycache__/*" ".pytest_cache/*" "*.git*"
+        az functionapp deployment source config-zip \
+          -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNCTION \
+          --src ConversationLogger.zip
+        # Enable run from package for performance and set build flag
+        az functionapp config appsettings set \
+          -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNCTION \
+          --settings WEBSITE_RUN_FROM_PACKAGE=1 SCM_DO_BUILD_DURING_DEPLOYMENT=false
+        cd ..
+        
+        echo "Deploying MemoryGenerator with zip deployment..."
+        cd MemoryGenerator
+        # Install dependencies locally for zip deployment
+        pip install -r requirements.txt -t .python_packages/lib/site-packages
+        zip -r MemoryGenerator.zip . -x "*.pyc" "__pycache__/*" ".pytest_cache/*" "*.git*"
+        az functionapp deployment source config-zip \
+          -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNCTION \
+          --src MemoryGenerator.zip
+        az functionapp config appsettings set \
+          -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNCTION \
+          --settings WEBSITE_RUN_FROM_PACKAGE=1 SCM_DO_BUILD_DURING_DEPLOYMENT=false
+        cd ..
+        
+        echo "=== Azure Functions deployment completed (zip method) ===" 
+        
+        echo "=== Configuring Function Apps with Key Vault references ==="
+        
+        # Enable managed identity for Function Apps
+        echo "Enabling managed identity for YOUR_CONVERSATION_LOGGER_FUNCTION..."
+        az functionapp identity assign -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNCTION
+        
+        echo "Enabling managed identity for YOUR_MEMORY_GENERATOR_FUNCTION..."
+        az functionapp identity assign -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNCTION
+        
+        # Get principal IDs
+        LOGGER_PRINCIPAL_ID=$(az functionapp show -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNCTION --query identity.principalId -o tsv)
+        GENERATOR_PRINCIPAL_ID=$(az functionapp show -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNCTION --query identity.principalId -o tsv)
+        
+        # Grant Key Vault access permissions
+        echo "Granting Key Vault access to Function Apps..."
+        az keyvault set-policy -n YOUR_KEYVAULT_NAME --object-id $LOGGER_PRINCIPAL_ID --secret-permissions get list
+        az keyvault set-policy -n YOUR_KEYVAULT_NAME --object-id $GENERATOR_PRINCIPAL_ID --secret-permissions get list
+        
+        # Configure App Settings with Key Vault references
+        echo "Configuring Key Vault references for YOUR_CONVERSATION_LOGGER_FUNCTION..."
+        az functionapp config appsettings set -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNCTION --settings \
+          "OPENAI_API_KEY=@Microsoft.KeyVault(SecretUri=https://YOUR_KEYVAULT_NAME.vault.azure.net/secrets/openai-api-key/)" \
+          "AZURE_SPEECH_KEY=@Microsoft.KeyVault(SecretUri=https://YOUR_KEYVAULT_NAME.vault.azure.net/secrets/azure-speech-key/)"
+        
+        echo "Configuring Key Vault references for YOUR_MEMORY_GENERATOR_FUNCTION..."
+        az functionapp config appsettings set -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNCTION --settings \
+          "OPENAI_API_KEY=@Microsoft.KeyVault(SecretUri=https://YOUR_KEYVAULT_NAME.vault.azure.net/secrets/openai-api-key/)"
+        
+        echo "=== Key Vault configuration completed ==="
+
+  # Create sanitized manifest for artifact (remove sensitive data)
+  - task: Bash@3
+    displayName: 'Create Sanitized Manifest for Artifact'
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        
+        FINAL_MANIFEST="$(Build.SourcesDirectory)/config/deployment.json"
+        SANITIZED_MANIFEST="$(Build.ArtifactStagingDirectory)/deployment.sanitized.json"
+        
+        # Create sanitized version (mask sensitive values)
+        jq '
+          # Remove registry credentials
+          del(.modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials) |
+          # Mask environment variables containing sensitive data
+          .modulesContent."$edgeAgent"."properties.desired".modules |= 
+            with_entries(
+              if .value.env then
+                .value.env |= with_entries(
+                  if (.key | test("KEY|PASSWORD|SECRET|TOKEN"; "i")) then
+                    .value.value = "***MASKED***"
+                  else . end
+                )
+              else . end
+            )
+        ' "$FINAL_MANIFEST" > "$SANITIZED_MANIFEST"
+        
+        echo "Sanitized manifest created for artifact publishing"
+
+  # Save sanitized artifact (no sensitive data)
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Sanitized Deployment Manifest'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)/deployment.sanitized.json'
+      ArtifactName: 'deployment-manifest'
+      publishLocation: 'Container'
