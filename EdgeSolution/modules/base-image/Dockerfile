@@ -10,16 +10,14 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install common Python packages
+# Install Azure Infrastructure + Core AI packages
 RUN pip install --no-cache-dir \
-    azure-iot-device==2.12.0 \
-    openai==1.12.0 \
-    openai-whisper==20231117 \
+    azure-iot-device==2.14.0 \
+    azure-identity>=1.17.0 \
+    azure-keyvault-secrets==4.7.0 \
+    openai>=1.35.0 \
     numpy==1.24.3 \
     python-dotenv==1.0.0
-
-# Pre-download Whisper model
-RUN python -c "import whisper; whisper.load_model('base')"
 
 # Add to audio group
 RUN usermod -a -G audio root
