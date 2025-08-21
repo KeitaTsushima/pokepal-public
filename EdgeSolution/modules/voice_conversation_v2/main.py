@@ -145,14 +145,15 @@ class Application:
         speech_to_text_client = SpeechToTextFactory.create(stt_config)
         
         openai_client = OpenAIClient(config={
-            'api_key': self.config_loader.get("llm.api_key"),
             'model': self.config_loader.get("llm.model", "gpt-4o-mini"),
             'temperature': self.config_loader.get("llm.temperature", 0.7)
         })
         
         tts_client = TTSClient(config={
-            'voice': self.config_loader.get("tts.voice", "nova"),
-            'speed': self.config_loader.get("tts.speed", 1.0)
+            'region': self.config_loader.get("tts.region", "japaneast"),
+            'voice_name': self.config_loader.get("tts.voice_name", "ja-JP-NanamiNeural"),
+            'speech_rate': self.config_loader.get("tts.speech_rate", 1.0),
+            'speech_pitch': self.config_loader.get("tts.speech_pitch", 0)
         })
         
         memory_repository = MemoryRepository(
