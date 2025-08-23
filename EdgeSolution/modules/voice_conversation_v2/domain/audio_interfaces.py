@@ -34,17 +34,9 @@ class SpeechToTextProtocol(Protocol):
         ...
     
     def update_config(self, config: Dict[str, Any]) -> None:
-        """
-        Args:
-            config: New configuration settings
-        """
         ...
     
     def get_performance_metrics(self) -> Dict[str, Any]:
-        """
-        Returns:
-            Metrics including processing time, accuracy, etc.
-        """
         ...
     
     def cleanup(self) -> None:
@@ -55,10 +47,9 @@ class AudioOutputProtocol(Protocol):
     """Abstract interface for audio output"""
     
     def text_to_speech(self, text: str) -> None:
-        """
-        Args:
-            text: Text to be spoken
-        """
+        ...
+    
+    def stop_audio_for_barge_in(self) -> None:
         ...
     
     def cleanup(self) -> None:

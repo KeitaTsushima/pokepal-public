@@ -5,11 +5,14 @@ Entry point for the voice conversation module
 Assembles all components using dependency injection (DI)
 and starts the application.
 """
+import asyncio
 import logging
 import os
 import sys
 import signal
 from typing import Optional
+
+from domain.conversation import ConversationConfig
 
 from application.conversation_service import ConversationService
 from application.voice_interaction_service import VoiceInteractionService
@@ -19,18 +22,20 @@ from application.proactive_service import ProactiveService
 from adapters.input.iot_commands import IoTCommandAdapter
 from adapters.input.signal_handler import SignalHandler
 from adapters.output.audio_output import AudioOutputAdapter
-from adapters.output.iot_telemetry import IoTTelemetryAdapter
 
-from infrastructure.ai.openai_client import OpenAIClient
+from infrastructure.iot.telemetry_client import IoTTelemetryClient
+from infrastructure.ai.llm_client import LLMClient
 from infrastructure.ai.tts_client import TTSClient
-from infrastructure.ai.speech_to_text_factory import SpeechToTextFactory
+from infrastructure.ai.stt_client import STTClient
 from infrastructure.audio.vad_processor import VADProcessor
 from infrastructure.audio.audio_device import AudioDevice
 from infrastructure.audio.audio_device_detector import AudioDeviceDetector
 from infrastructure.config.config_loader import ConfigLoader
-from infrastructure.config.config_factory import ConfigFactory
 from infrastructure.config.twin_sync import TwinSync
+from infrastructure.iot.connection_manager import IoTConnectionManager
 from infrastructure.memory.memory_repository import MemoryRepository
+from infrastructure.ai.async_openai_shared import cleanup_shared_openai
+from infrastructure.security.async_key_vault import cleanup_async_key_vault, get_async_key_vault
 
 logging.basicConfig(
     level=logging.DEBUG if os.environ.get('DEBUG') else logging.INFO,
@@ -41,9 +46,6 @@ logger = logging.getLogger(__name__)
 
 class Application:
     """Application management class for the entire system"""
-    
-    # Required configuration keys
-    REQUIRED_CONFIG_KEYS = ["llm.api_key"]
     
     def __init__(self):
         self.voice_service: Optional[VoiceInteractionService] = None
@@ -74,55 +76,34 @@ class Application:
         local_config = self.config_loader.load_from_file("/app/config/config.json")
         if local_config:
             self.config_loader.update(local_config)
-            
-        self._validate_required_configs()
         
-        try:
-            self.config_loader.sync_with_twin()
-            # TODO: Fundamental refactoring of initialization order needed
-            # Current: temporary solution to reset handlers after module_client initialization
-            # Ideal: phased initialization (basic config → IoT connection → Infrastructure → Adapters → Application)
-            # Details in "docs/daily-logs/2025-07-17.md"
-            # IoTCommandAdapter is initialized in setup(), so skip here
-            pass
-        except Exception as e:
-            logger.warning(f"Failed to sync with module twin, continuing with local config: {e}")
+        # NOTE: Removed deprecated sync_with_twin() call here to avoid duplicate IoT client creation
+        # Twin sync is now handled via IoTConnectionManager and TwinSync below
         
         # 2. Build Infrastructure layer
-        try:
-            detected_devices = AudioDeviceDetector.detect_devices()
-        except Exception as e:
-            logger.warning(f"Audio device auto-detection failed, falling back to defaults: {e}")
-            detected_devices = {"mic": None, "speaker": None}
-
-        # TODO: Create defaults.json to consolidate default values
-        # Current: self.config_loader.get("audio.volume", 1.0)
-        # Future: self.config_loader.get("audio.volume")  # defaults from defaults.json
-            # Implementation plan:
-            # 1. Create infrastructure/config/defaults.json ✅ completed
-            # 2. Load defaults.json in ConfigLoader constructor
-            # 3. Search order in get() method: defaults → runtime → config.json → IoT Twin
-            # 4. Remove default value responsibility from main.py (remove hardcoded 16000, 1.0, 5, etc.)
-            # 5. Inject dynamic values (detected_devices) via set_runtime_defaults()
-
-        # Get common settings first for efficiency
-        mic_device_name = self.config_loader.get("audio.mic_device", detected_devices["mic"])
-        sample_rate = self.config_loader.get("audio.sample_rate", 16000)
+        # Perform dynamic detection only if not already set by environment variables
+        if "audio.mic_device" not in self.config_loader.runtime_config or "audio.speaker_device" not in self.config_loader.runtime_config:
+            audio_detector = AudioDeviceDetector()
+            detected_devices = audio_detector.detect_devices()  # Guaranteed to return valid values
+            
+            # Set detected devices only if not already set by env vars
+            if "audio.mic_device" not in self.config_loader.runtime_config:
+                self.config_loader.set_runtime("audio.mic_device", detected_devices["mic"])
+                logger.info("Auto-detected mic device: %s", detected_devices["mic"])
+            
+            if "audio.speaker_device" not in self.config_loader.runtime_config:
+                self.config_loader.set_runtime("audio.speaker_device", detected_devices["speaker"])
+                logger.info("Auto-detected speaker device: %s", detected_devices["speaker"])
         
-        audio_device = AudioDevice(config={
-            'speaker_device': self.config_loader.get("audio.speaker_device", detected_devices["speaker"]),
-            'mic_device': mic_device_name,
-            'volume': self.config_loader.get("audio.volume", 1.0),
-            'sample_rate': sample_rate
-        })
+        audio_device = AudioDevice(self.config_loader)
 
         # TODO: Consider introducing DI Container - automate manual dependency injection
         # Currently manually assembling 12 services, but introducing DI Container libraries
         # like dependency-injector or punq could significantly simplify main.py and improve testability
         
         vad_processor = VADProcessor(
-            sample_rate=sample_rate,
-            vad_mode=self.config_loader.get("vad.mode", 3)
+            sample_rate=self.config_loader.get("audio.sample_rate"),
+            vad_mode=self.config_loader.get("vad.mode")
         )
         
         audio_capture_service = AudioCaptureService(
@@ -130,76 +111,71 @@ class Application:
             config_loader=self.config_loader
         )
         
-        stt_config = {
-            'strategy': self.config_loader.get("stt.strategy", "auto"),
-            'api_key': self.config_loader.get("llm.api_key"),
-            'openai': {
-                'model': self.config_loader.get("stt.openai.model", "whisper-1"),
-                'language': self.config_loader.get("stt.language", "ja")
-            },
-            'local': {
-                'model_name': self.config_loader.get("stt.model_name", "base"),
-                'language': self.config_loader.get("stt.language", "ja")
-            }
-        }
-        speech_to_text_client = SpeechToTextFactory.create(stt_config)
+        stt_client = STTClient(self.config_loader)
         
-        openai_client = OpenAIClient(config={
-            'model': self.config_loader.get("llm.model", "gpt-4o-mini"),
-            'temperature': self.config_loader.get("llm.temperature", 0.7)
-        })
+        llm_client = LLMClient(self.config_loader)
         
-        tts_client = TTSClient(config={
-            'region': self.config_loader.get("tts.region", "japaneast"),
-            'voice_name': self.config_loader.get("tts.voice_name", "ja-JP-NanamiNeural"),
-            'speech_rate': self.config_loader.get("tts.speech_rate", 1.0),
-            'speech_pitch': self.config_loader.get("tts.speech_pitch", 0)
-        })
+        tts_client = TTSClient(self.config_loader)
         
         memory_repository = MemoryRepository(
-            memory_dir=self.config_loader.get("memory.dir", "/app/memories")
+            memory_dir=self.config_loader.get("memory.dir")
         )
         
+        # Initialize IoT Connection Manager (single IoT Hub client instance)
+        iot_connection_manager = IoTConnectionManager()
+        iot_connection_manager.connect()
+        
+        # Sync configuration with Module Twin via IoTConnectionManager
+        try:
+            twin = iot_connection_manager.get_client().get_twin()
+            if twin and "desired" in twin:
+                desired_props = twin["desired"]
+                # Apply twin properties to config (excluding system properties)
+                for key, value in desired_props.items():
+                    if not key.startswith("$"):
+                        self.config_loader.update({key: value})
+                logger.info("Configuration synced with Module Twin")
+        except Exception as e:
+            logger.warning(f"Failed to sync with module twin, continuing with local config: {e}")
+        
         # Initialize Twin sync (to receive memory updates)
-        self.twin_sync = TwinSync(self.config_loader, memory_repository)
+        self.twin_sync = TwinSync(self.config_loader, memory_repository, iot_connection_manager)
         
         # 3. Build Adapters layer
         text_to_speech = AudioOutputAdapter(
             tts_client=tts_client,
-            audio_device=audio_device
+            audio_device=audio_device,
+            config_loader=self.config_loader
         )
         
-        telemetry_sender = IoTTelemetryAdapter(
-            iot_client=self.config_loader.module_client
+        telemetry_sender = IoTTelemetryClient(
+            iot_client=iot_connection_manager.get_client(),
+            config_loader=self.config_loader
         )
         
         # 4. Create Domain configuration
-        config_factory = ConfigFactory()
-        conversation_config = config_factory.create_conversation_config(
-            self.config_loader.get_config()
-        )
+        conversation_config = ConversationConfig(self.config_loader)
         
         # 5. Build Application layer
         conversation_service = ConversationService(
             config=conversation_config,
-            ai_client=openai_client,
+            ai_client=llm_client,
             memory_repository=memory_repository,
-            telemetry_adapter=telemetry_sender
+            telemetry_adapter=telemetry_sender,
+            clause_break_threshold=self.config_loader.get('tts.streaming.clause_break_threshold')
         )
         
         self.voice_service = VoiceInteractionService(
             conversation_service=conversation_service,
             audio_capture=audio_capture_service,
-            speech_to_text=speech_to_text_client,
+            speech_to_text=stt_client,
             audio_output=text_to_speech,
-            # TODO: Create defaults.json to consolidate default values
-            # Ideal: self.config_loader.get("conversation.no_voice_sleep_threshold")
-            no_voice_sleep_threshold=self.config_loader.get("no_voice_sleep_threshold", 5)
+            no_voice_sleep_threshold=self.config_loader.get("conversation.no_voice_sleep_threshold")
         )
         
         self.proactive_service = ProactiveService(
             audio_output=text_to_speech,
-            config=self.config_loader.get_config()
+            config_loader=self.config_loader
         )
         
         # Set ConversationService for TwinSync
@@ -215,7 +191,6 @@ class Application:
         Unclear dependencies:
         Dependencies are not apparent from just looking at the constructor
         """
-        self.twin_sync.conversation_service = conversation_service
         
         self.proactive_service.set_conversation_service(conversation_service)
         
@@ -225,11 +200,12 @@ class Application:
             services={
                 'conversation_service': conversation_service,
                 'memory_manager': memory_repository
-            }
+            },
+            iot_client=iot_connection_manager.get_client()
         )
         
         iot_commands.register_update_callback('memory_update', 
-            lambda update: self.twin_sync.handle_twin_update({'memory_update': update}))
+            lambda update: self.twin_sync.receive_memory_summary(update))
         
         iot_commands.register_update_callback('conversation_restore',
             lambda recovery_data: conversation_service.recover_conversations(recovery_data))
@@ -242,7 +218,7 @@ class Application:
         
         logger.info("Application setup completed")
     
-    def run(self) -> None:
+    async def run(self) -> None:
         if not self.voice_service:
             raise RuntimeError("Application not properly setup")
         
@@ -251,7 +227,11 @@ class Application:
             
             self.twin_sync.report_startup()
             
-            self.voice_service.initialize()
+            # Key Vault warmup (AAD authentication pre-establishment)
+            # Temporarily disabled for debugging
+            # await self._warmup_key_vault()
+            
+            await self.voice_service.initialize()
             
             if self.proactive_service:
                 try:
@@ -260,11 +240,11 @@ class Application:
                     logger.info("ProactiveService started successfully")
                 except Exception as e:
                     logger.error(f"Failed to start ProactiveService: {e}", exc_info=True)
-                    # ProactiveServiceが起動しなくても他の機能は続行
+                    # Continue with other functions even if ProactiveService startup fails
             else:
                 logger.warning("ProactiveService is None, skipping start")
             
-            self.voice_service.run()
+            await self.voice_service.run()
             
         except Exception as e:
             logger.error(f"Application error: {e}", exc_info=True)
@@ -286,14 +266,12 @@ class Application:
             except Exception as e:
                 logger.error(f"voice_service.stop() raised during shutdown: {e}")
 
-        # TODO: Add proper resource cleanup (memory optimization for long-running IoT)
-        # Required cleanup processes:
+        # Async resource cleanup (implemented for OpenAI client)
+        # TODO: Add remaining cleanup processes:
         # - Close IoT Hub connection (azure_iot_device.IoTHubModuleClient)
-        # - Close OpenAI HTTP client connections
         # - Audio device resources (microphone/speaker)
         # - Domain layer resources via conversation.end_conversation() (tiktoken, Deque, etc.)
         # - Temporary file cleanup
-        # Implementation order: Add cleanup() methods to each layer → integrated stop() implementation
         
         if self.signal_handler:
             try:
@@ -303,21 +281,38 @@ class Application:
         
         logger.info("Application stopped")
     
-    def _validate_required_configs(self) -> None:
-        missing = [key for key in self.REQUIRED_CONFIG_KEYS if not self.config_loader.get(key)]
-        if missing:
-            raise ValueError(f"Missing required configuration keys: {', '.join(missing)}")
+    async def _warmup_key_vault(self) -> None:
+        """Warm up Key Vault AAD authentication (best-effort)"""
+        try:
+            timeout_sec = float(os.getenv("KV_WARMUP_TIMEOUT_SEC", "5.0"))
+            kv_client = await get_async_key_vault()
+            success = await kv_client.warmup_token_only(timeout_sec)
+            
+            if success:
+                logger.info("Key Vault warmup completed successfully")
+            else:
+                logger.info("Key Vault warmup failed (continuing anyway)")
+                
+        except Exception as e:
+            logger.warning(f"Key Vault warmup error (best-effort, continuing): {e}")
 
-def main():
+async def main():
     app = Application()
     
     try:
         app.setup()
-        app.run()
+        await app.run()
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)
+    finally:
+        # Ensure async resources are cleaned up on any exit
+        try:
+            await cleanup_shared_openai()
+            await cleanup_async_key_vault()
+            logger.info("Async resources cleaned up successfully")
+        except Exception as e:
+            logger.error(f"Failed to cleanup async resources: {e}")
 
 if __name__ == "__main__":
-    main()
-
+    asyncio.run(main())

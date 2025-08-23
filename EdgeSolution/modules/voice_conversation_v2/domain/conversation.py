@@ -3,7 +3,6 @@
 Conversation Domain Model
 Defines core conversation concepts and business rules
 """
-from dataclasses import dataclass
 from typing import List, Dict, Any
 import uuid
 
@@ -13,14 +12,21 @@ from .conversation_state import ConversationState
 from .conversation_policy import ConversationPolicy
 
 
-@dataclass
 class ConversationConfig:
     """Configuration for conversation behavior and limits"""
-    max_tokens: int
-    default_system_prompt: str
-    farewell_message: str
-    llm_model_name: str
-    tokenizer_encoding_method: str
+    
+    def __init__(self, config_loader):
+        """Initialize ConversationConfig from ConfigLoader
+        
+        Args:
+            config_loader: ConfigLoader instance for dynamic configuration access
+        """
+        self.config_loader = config_loader  # Store config_loader for access by other components
+        self.max_tokens = config_loader.get('memory.immediate_tokens')
+        self.default_system_prompt = config_loader.get('llm.system_prompt')
+        self.farewell_message = config_loader.get('conversation.farewell_message')
+        self.llm_model_name = config_loader.get('llm.model')
+        self.tokenizer_encoding_method = config_loader.get('llm.token_encoding')
 
 
 class Conversation:

@@ -1,14 +1,15 @@
-# Use base image (pre-built)
-FROM your-registry.azurecr.io/voice-conversation-base:1.1
+# Use base image (pre-built) - version controlled by Pipeline
+ARG BASE_VERSION
+FROM pokepalregistry.azurecr.io/voice-conversation-base:${BASE_VERSION}
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements.txt and install dependencies
+# Copy requirements.txt first for better layer caching
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code (maintain directory structure)
+# Copy application code (maintain directory structure) - after dependencies
 COPY main.py ./
 
 # Copy each layer directory

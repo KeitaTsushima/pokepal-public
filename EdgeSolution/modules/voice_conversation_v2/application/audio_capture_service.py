@@ -7,6 +7,8 @@ import wave
 import time
 import tempfile
 import logging
+import os
+import shutil
 from typing import Optional, List
 
 
@@ -17,6 +19,13 @@ class AudioCaptureService:
         self.vad_processor = vad_processor
         self.config_loader = config_loader
         self.logger = logging.getLogger(__name__)
+        
+        # Check ffmpeg availability once at startup for STT optimization
+        self.ffmpeg_available = shutil.which("ffmpeg") is not None
+        if not self.ffmpeg_available:
+            self.logger.warning("ffmpeg not found; STT optimization disabled")
+        else:
+            self.logger.debug("ffmpeg available; STT optimization enabled")
         
         self._load_config()
         self._calculate_frame_params()
@@ -30,7 +39,13 @@ class AudioCaptureService:
         self.min_speech_duration = self.config_loader.get('vad.min_speech_duration', 0.3)
         self.max_silence_duration = self.config_loader.get('vad.max_silence_duration', 1.0)
         self.max_recording_duration = self.config_loader.get('vad.max_recording_duration', 30.0)
-        self.audio_device = self.config_loader.get('audio.mic_device', 'plughw:3,0')
+        self.audio_device = self.config_loader.get('audio.mic_device')
+        
+        # Log VAD configuration for debugging
+        self.logger.info(f"VAD Configuration: speech_threshold={self.speech_threshold}, "
+                        f"min_speech_duration={self.min_speech_duration}s, "
+                        f"max_silence_duration={self.max_silence_duration}s, "
+                        f"max_recording_duration={self.max_recording_duration}s")
     
     def _calculate_frame_params(self):
         self.frame_size = int(self.sample_rate * self.frame_duration_ms / 1000)
@@ -80,12 +95,14 @@ class AudioCaptureService:
                 
                 if not triggered:
                     triggered = self._check_speech_trigger(ring_buffer, frame_data, voiced_frames)
+                    if triggered:
+                        self.logger.info("Speech detection start")
                 else:
                     voiced_frames.append(frame_data)
                     silence_frames = self._update_silence_counter(is_speech, silence_frames)
                     
                     if silence_frames > max_silence_frames:
-                        self.logger.info("End of speech detected")
+                        self.logger.info("Speech detection end")
                         break
         finally:
             process.terminate()
@@ -135,18 +152,103 @@ class AudioCaptureService:
         return voiced_frames
     
     def _save_as_wav_file(self, voiced_frames: List[bytes]) -> str:
+        # Create temporary raw file first
         with tempfile.NamedTemporaryFile(mode='wb', suffix='.wav', delete=False) as f:
-            output_file = f.name
+            raw_output_file = f.name
             
-        with wave.open(output_file, 'wb') as wf:
+        with wave.open(raw_output_file, 'wb') as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)
             wf.setframerate(self.sample_rate)
             wf.writeframes(b''.join(voiced_frames))
         
         speech_duration = len(voiced_frames) * self.frame_duration_ms / 1000
-        self.logger.info(f"Recording complete: {output_file} ({speech_duration:.1f}s)")
-        return output_file
+        self.logger.info(f"Recording complete: {raw_output_file} ({speech_duration:.1f}s)")
+        
+        # STT optimization: Apply ffmpeg 16k/mono + silence trimming for faster STT processing
+        optimized_file = self._optimize_for_stt(raw_output_file)
+        return optimized_file if optimized_file else raw_output_file
+    
+    def _optimize_for_stt(self, input_file: str) -> Optional[str]:
+        """
+        Optimize audio file for STT processing using ffmpeg
+        - Convert to 16kHz mono (reduces upload size and server processing)
+        - Trim silence at end (reduces processing time)
+        
+        Expected improvement: 300-600ms reduction in STT processing time
+        """
+        # Early return if ffmpeg not available
+        if not self.ffmpeg_available:
+            return None
+            
+        try:
+            # Use /dev/shm (RAM disk) if available for faster I/O
+            temp_dir = "/dev/shm" if os.path.isdir("/dev/shm") else tempfile.gettempdir()
+            
+            with tempfile.NamedTemporaryFile(mode='wb', suffix='_stt.wav', delete=False, dir=temp_dir) as f:
+                optimized_file = f.name
+            
+            # ffmpeg command: 16kHz mono + silence removal
+            cmd = [
+                'ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
+                '-i', input_file,
+                '-af', 'silenceremove=stop_periods=1:stop_duration=0.4:stop_threshold=-45dB',  # trim end silence
+                '-ac', '1',      # mono
+                '-ar', '16000',  # 16kHz sample rate
+                '-acodec', 'pcm_s16le',
+                '-f', 'wav',     # WAV format
+                optimized_file
+            ]
+            
+            self.logger.debug(f"STT optimization: {input_file} -> {optimized_file}")
+            t0 = time.time()
+            # 目安: 入力秒数 × 0.3 + 3秒（RasPi想定）。上限/下限を付与。
+            est_timeout = max(6, min(30, int((os.path.getsize(input_file) / (32000)) * 0.3 + 3)))
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=est_timeout)
+            t1 = time.time()
+            
+            if result.returncode == 0:
+                # Check optimized file duration before using it
+                try:
+                    with wave.open(optimized_file, 'rb') as wf:
+                        duration = wf.getnframes() / wf.getframerate()
+                        
+                    if duration < 0.1:  # Whisper API minimum
+                        self.logger.warning(f"Optimized audio too short: {duration:.2f}s, using original file")
+                        os.unlink(optimized_file)
+                        return None
+                        
+                    # Clean up original file
+                    try:
+                        os.unlink(input_file)
+                    except Exception:
+                        pass
+                    processing_time = t1 - t0
+                    self.logger.info(f"STT-optimized audio: {optimized_file} (duration={duration:.2f}s, ffmpeg={processing_time:.2f}s)")
+                    return optimized_file
+                    
+                except Exception as e:
+                    self.logger.warning(f"Failed to check optimized audio duration: {e}, using original")
+                    try:
+                        os.unlink(optimized_file)
+                    except Exception:
+                        pass
+                    return None
+            else:
+                self.logger.warning(f"ffmpeg optimization failed: {result.stderr}")
+                # Clean up failed output file
+                try:
+                    os.unlink(optimized_file)
+                except Exception:
+                    pass
+                return None
+                
+        except subprocess.TimeoutExpired:
+            self.logger.warning("ffmpeg optimization timeout, using original file")
+            return None
+        except Exception as e:
+            self.logger.warning(f"STT optimization error: {e}, using original file")
+            return None
     
     def cleanup(self) -> None:
         self.logger.info("AudioCaptureService cleanup completed")

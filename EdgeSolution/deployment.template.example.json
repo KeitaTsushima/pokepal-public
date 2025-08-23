@@ -10,10 +10,10 @@
             "minDockerVersion": "v1.25",
             "loggingOptions": "",
             "registryCredentials": {
-              "YOUR_REGISTRY_CRED": {
-                "address": "YOUR_REGISTRY.azurecr.io",
-                "username": "${ACR_USERNAME}",
-                "password": "${ACR_PASSWORD}"
+              "YOUR_ACR_CRED": {
+                "address": "YOUR_ACR_NAME.azurecr.io",
+                "username": "YOUR_ACR_NAME",
+                "password": "${YOUR_ACR_PASSWORD}"
               }
             }
           }
@@ -22,7 +22,7 @@
           "edgeAgent": {
             "type": "docker",
             "settings": {
-              "image": "mcr.microsoft.com/azureiotedge-agent:1.4",
+              "image": "mcr.microsoft.com/azureiotedge-agent:1.5",
               "createOptions": {
                 "HostConfig": {
                   "LogConfig": {
@@ -46,7 +46,7 @@
             "status": "running",
             "restartPolicy": "always",
             "settings": {
-              "image": "mcr.microsoft.com/azureiotedge-hub:1.4",
+              "image": "mcr.microsoft.com/azureiotedge-hub:1.5",
               "createOptions": {
                 "HostConfig": {
                   "PortBindings": {
@@ -101,7 +101,7 @@
                     "/dev/snd:/dev/snd",
                     "/var/log/YOUR_APP:/var/log/YOUR_APP",
                     "/var/log/YOUR_APP/memories:/app/memories",
-                    "/etc/iotedge/kvcerts/YOUR_CERT.pem:/YOUR_CERT.pem:ro"
+                    "/etc/iotedge/kvcerts/YOUR-KV-CERT.pem:/YOUR-KV-CERT.pem:ro"
                   ],
                   "User": "0:0",
                   "NanoCpus": 400000000,
@@ -124,10 +124,13 @@
             },
             "env": {
               "AUDIO_DEVICE": {
-                "value": "plughw:3,0"
+                "value": "plughw:2,0"
               },
               "PLAYBACK_DEVICE": {
                 "value": "plughw:2,0"
+              },
+              "CAPTURE_DEVICE": {
+                "value": "plughw:3,0"
               },
               "LOG_DIR": {
                 "value": "/var/log/YOUR_APP"
@@ -148,7 +151,7 @@
                 "value": "${AZURE_CLIENT_ID}"
               },
               "AZURE_CLIENT_CERTIFICATE_PATH": {
-                "value": "/YOUR_CERT.pem"
+                "value": "/YOUR-KV-CERT.pem"
               },
               "AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT": {
                 "value": "${AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT}"

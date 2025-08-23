@@ -275,7 +275,7 @@ jobs:
     inputs:
       azureSubscription: '$(DOCKER_REGISTRY_SERVICE_CONNECTION)'
       KeyVaultName: 'YOUR_KEYVAULT_NAME'
-      SecretsFilter: 'pokepal-acr-password'
+      SecretsFilter: 'YOUR-ACR-PASSWORD'
       RunAsPreJob: false
 
   - task: Bash@3
@@ -325,12 +325,12 @@ jobs:
     displayName: 'Create Final Deployment Manifest'
     env:
       ACR_USERNAME: YOUR_ACR_NAME
-      ACR_PASSWORD: $(pokepal-acr-password)
-      KEY_VAULT_URL: https://YOUR_KEYVAULT_NAME.vault.azure.net/
+      ACR_PASSWORD: $(YOUR-ACR-PASSWORD)
+      KEY_VAULT_URL: https://YOUR_KEYVAULT_NAME_LOWER.vault.azure.net/
       AZURE_TENANT_ID: $(AZURE_TENANT_ID)
       AZURE_CLIENT_ID: $(AZURE_CLIENT_ID)
       AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT: "true"
-      CERT_PATH: /YOUR_CERT.pem
+      CERT_PATH: /YOUR-KV-CERT.pem
       OPENAI_SECRET_NAME: openai-api-key
       AZURE_SPEECH_SECRET_NAME: azure-speech-key
     inputs:
@@ -396,9 +396,9 @@ jobs:
           --arg sname "$AZURE_SPEECH_SECRET_NAME" \
           '
           # Replace ACR registry credentials
-          .modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials.YOUR_REGISTRY_CRED.username = $acr_user |
-          .modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials.YOUR_REGISTRY_CRED.password = $acr_pass |
-          .modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials.YOUR_REGISTRY_CRED.address = $login_server |
+          .modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials.YOUR_ACR_CRED.username = $acr_user |
+          .modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials.YOUR_ACR_CRED.password = $acr_pass |
+          .modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials.YOUR_ACR_CRED.address = $login_server |
           
           # Ensure env object exists before setting environment variables
           .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env //= {} |
@@ -472,11 +472,11 @@ jobs:
         # Create optimized zip (exclude cache files)
         zip -r ConversationLogger.zip . -x "*.pyc" "__pycache__/*" ".pytest_cache/*" "*.git*"
         az functionapp deployment source config-zip \
-          -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNCTION \
+          -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNC \
           --src ConversationLogger.zip
         # Enable run from package for performance and set build flag
         az functionapp config appsettings set \
-          -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNCTION \
+          -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNC \
           --settings WEBSITE_RUN_FROM_PACKAGE=1 SCM_DO_BUILD_DURING_DEPLOYMENT=false
         cd ..
         
@@ -486,10 +486,10 @@ jobs:
         pip install -r requirements.txt -t .python_packages/lib/site-packages
         zip -r MemoryGenerator.zip . -x "*.pyc" "__pycache__/*" ".pytest_cache/*" "*.git*"
         az functionapp deployment source config-zip \
-          -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNCTION \
+          -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNC \
           --src MemoryGenerator.zip
         az functionapp config appsettings set \
-          -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNCTION \
+          -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNC \
           --settings WEBSITE_RUN_FROM_PACKAGE=1 SCM_DO_BUILD_DURING_DEPLOYMENT=false
         cd ..
         
@@ -498,15 +498,15 @@ jobs:
         echo "=== Configuring Function Apps with Key Vault references ==="
         
         # Enable managed identity for Function Apps
-        echo "Enabling managed identity for YOUR_CONVERSATION_LOGGER_FUNCTION..."
-        az functionapp identity assign -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNCTION
+        echo "Enabling managed identity for YOUR_CONVERSATION_LOGGER_FUNC..."
+        az functionapp identity assign -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNC
         
-        echo "Enabling managed identity for YOUR_MEMORY_GENERATOR_FUNCTION..."
-        az functionapp identity assign -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNCTION
+        echo "Enabling managed identity for YOUR_MEMORY_GENERATOR_FUNC..."
+        az functionapp identity assign -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNC
         
         # Get principal IDs
-        LOGGER_PRINCIPAL_ID=$(az functionapp show -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNCTION --query identity.principalId -o tsv)
-        GENERATOR_PRINCIPAL_ID=$(az functionapp show -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNCTION --query identity.principalId -o tsv)
+        LOGGER_PRINCIPAL_ID=$(az functionapp show -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNC --query identity.principalId -o tsv)
+        GENERATOR_PRINCIPAL_ID=$(az functionapp show -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNC --query identity.principalId -o tsv)
         
         # Grant Key Vault access permissions
         echo "Granting Key Vault access to Function Apps..."
@@ -514,14 +514,14 @@ jobs:
         az keyvault set-policy -n YOUR_KEYVAULT_NAME --object-id $GENERATOR_PRINCIPAL_ID --secret-permissions get list
         
         # Configure App Settings with Key Vault references
-        echo "Configuring Key Vault references for YOUR_CONVERSATION_LOGGER_FUNCTION..."
-        az functionapp config appsettings set -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNCTION --settings \
-          "OPENAI_API_KEY=@Microsoft.KeyVault(SecretUri=https://YOUR_KEYVAULT_NAME.vault.azure.net/secrets/openai-api-key/)" \
-          "AZURE_SPEECH_KEY=@Microsoft.KeyVault(SecretUri=https://YOUR_KEYVAULT_NAME.vault.azure.net/secrets/azure-speech-key/)"
+        echo "Configuring Key Vault references for YOUR_CONVERSATION_LOGGER_FUNC..."
+        az functionapp config appsettings set -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNC --settings \
+          "OPENAI_API_KEY=@Microsoft.KeyVault(SecretUri=https://YOUR_KEYVAULT_NAME_LOWER.vault.azure.net/secrets/openai-api-key/)" \
+          "AZURE_SPEECH_KEY=@Microsoft.KeyVault(SecretUri=https://YOUR_KEYVAULT_NAME_LOWER.vault.azure.net/secrets/azure-speech-key/)"
         
-        echo "Configuring Key Vault references for YOUR_MEMORY_GENERATOR_FUNCTION..."
-        az functionapp config appsettings set -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNCTION --settings \
-          "OPENAI_API_KEY=@Microsoft.KeyVault(SecretUri=https://YOUR_KEYVAULT_NAME.vault.azure.net/secrets/openai-api-key/)"
+        echo "Configuring Key Vault references for YOUR_MEMORY_GENERATOR_FUNC..."
+        az functionapp config appsettings set -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNC --settings \
+          "OPENAI_API_KEY=@Microsoft.KeyVault(SecretUri=https://YOUR_KEYVAULT_NAME_LOWER.vault.azure.net/secrets/openai-api-key/)"
         
         echo "=== Key Vault configuration completed ==="
 

@@ -1,18 +1,10 @@
-# Azure IoT Edge
-azure-iot-device==2.11.0
-
-# Azure Key Vault
-azure-keyvault-secrets==4.7.0
-azure-identity==1.16.0
-
-# AI/ML
-openai>=1.35.0
-openai-whisper==20231117
-httpx==0.27.2
+# AI/Speech services (application-specific)
+azure-cognitiveservices-speech==1.44.0
+httpx[http2]==0.27.2
 tiktoken==0.7.0
+aiohttp==3.10.2  # Required for async Key Vault operations
 
-# Audio processing
-numpy==1.24.3
+# Audio processing  
 webrtcvad==2.0.10  # VAD (Voice Activity Detection)
 
 # HTTP requests (for memory download from Blob)
@@ -25,8 +17,4 @@ schedule==1.2.0
 psutil==5.9.5
 
 # Utilities
-python-dotenv==1.0.0
 pytz==2024.1
-
-# Text-to-Speech (Open JTalk)
-# Note: Open JTalk system packages are installed in base image

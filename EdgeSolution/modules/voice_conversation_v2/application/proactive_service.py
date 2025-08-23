@@ -9,6 +9,7 @@ Task Scheduler Service implementation following Clean Architecture.
 # Phase 2: Module Twin integration, cloud configuration sync, management UI integration
 # Phase 3: AI condition judgment, automatic time adjustment, advanced scheduling (INTERVAL/MONTHLY/CONDITIONAL)
 """
+import asyncio
 import logging
 import threading
 import time
@@ -218,11 +219,11 @@ class TaskSchedulerService:
                  task_repository: TaskRepository,
                  audio_output,
                  conversation_service=None,  # For LLM integration
-                 config=None):
+                 config_loader=None):
         self._task_repository = task_repository
         self._audio_output = audio_output
         self._conversation_service = conversation_service
-        self._config = config or {}
+        self.config_loader = config_loader
         self._logger = logging.getLogger(__name__)
         self._active_tasks: List[ScheduledTask] = []
         self._running = False
@@ -694,7 +695,9 @@ class TaskScheduler:
         unified_message = self._task_scheduler_service.create_unified_message(tasks)
         
         try:
-            self._audio_output.text_to_speech(unified_message)
+            # Run async method in sync context using asyncio.run()
+            # This creates a new event loop for each call, which is fine for announcements
+            asyncio.run(self._audio_output.speech_announcement(unified_message))
             status = TaskExecutionStatus.ANNOUNCED
             error_msg = None
             
@@ -809,14 +812,19 @@ class ProactiveService:
     Provides new functionality while maintaining compatibility with existing APIs.
     """
     
-    def __init__(self, audio_output, config: Dict[str, Any]) -> None:
-        self._logger = logging.getLogger(__name__)
+    def __init__(self, audio_output, config_loader) -> None:
+        """Initialize ProactiveService with Clean Architecture compliance
         
-        # Data file path configuration (config takes priority, defaults otherwise)
-        # Configuration example: {"proactive_data": {"task_file": "/app/data/tasks.json", "queue_log_file": "/app/data/task_executions.json", "check_interval": 5}}
-        data_config = config.get("proactive_data", {})
-        task_file = data_config.get("task_file", "proactive_tasks.json")
-        queue_log_file = data_config.get("queue_log_file", "task_executions.json")
+        Args:
+            audio_output: Audio output adapter for TTS
+            config_loader: ConfigLoader instance for dynamic configuration access
+        """
+        self._logger = logging.getLogger(__name__)
+        self.config_loader = config_loader
+        
+        # Data file path configuration from ConfigLoader
+        task_file = self.config_loader.get("proactive_data.task_file")
+        queue_log_file = self.config_loader.get("proactive_data.queue_log_file")
         
         # Infrastructure layer initialization
         self._task_repository = JsonTaskRepository(task_file)
@@ -826,16 +834,16 @@ class ProactiveService:
             task_repository=self._task_repository,
             audio_output=audio_output,
             conversation_service=None,
-            config=config
+            config_loader=self.config_loader
         )
         
         # Scheduler initialization
         self._scheduler = TaskScheduler(
             task_scheduler_service=self._task_scheduler_service,
             audio_output=audio_output,
-            check_interval=data_config.get("check_interval", 10),
+            check_interval=self.config_loader.get("proactive_data.check_interval"),
             queue_log_file=queue_log_file,
-            max_queue_size=data_config.get("max_queue_size", 50)
+            max_queue_size=self.config_loader.get("proactive_data.max_queue_size")
         )
         
         

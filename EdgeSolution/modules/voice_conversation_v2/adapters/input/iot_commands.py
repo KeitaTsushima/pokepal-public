@@ -21,13 +21,15 @@ logger = logging.getLogger(__name__)
 class IoTCommandAdapter:
     """Adapter for processing commands from IoT Hub"""
 
-    def __init__(self, config_loader, services: Optional[Dict[str, Any]] = None):
+    def __init__(self, config_loader, services: Optional[Dict[str, Any]] = None, iot_client=None):
         """
         Args:
             config_loader: Configuration management object
             services: References to application services (optional)
+            iot_client: IoT Hub client instance (optional, preferred over config_loader.module_client)
         """
         self.config_loader = config_loader
+        self.iot_client = iot_client
         self.update_callbacks: Dict[str, Callable] = {}
         self.services = services or {}
         self.start_time = datetime.utcnow()
@@ -44,14 +46,17 @@ class IoTCommandAdapter:
         logger.info("IoT command adapter initialized with shared IoT Hub connection")
 
     def _setup_handlers(self) -> None:
-        if not self.config_loader.module_client:
+        # Use injected iot_client if available, otherwise fallback to config_loader.module_client
+        client = self.iot_client if self.iot_client else (self.config_loader.module_client if self.config_loader else None)
+        
+        if not client:
             logger.warning("Module client not available yet, handlers will be set up later")
             return
 
-        self.config_loader.module_client.on_twin_desired_properties_patch_received = self._handle_twin_update
+        client.on_twin_desired_properties_patch_received = self._handle_twin_update
         logger.info("Registered Twin update handler")
 
-        self.config_loader.module_client.on_method_request_received = self._on_method_request
+        client.on_method_request_received = self._on_method_request
         logger.info("Registered Direct Method handler")
 
     def register_update_callback(self, key: str, callback: Callable) -> None:
@@ -105,6 +110,7 @@ class IoTCommandAdapter:
 
         if normal_updates:
             self.config_loader.update(normal_updates)
+            self._handle_api_key_change(normal_updates)            
             logger.debug(f"Updated config: {list(normal_updates.keys())}")
 
         for key, callback in self.update_callbacks.items():
@@ -144,12 +150,29 @@ class IoTCommandAdapter:
         try:
             config_updates = json.loads(payload) if payload else {}
             self.config_loader.update(config_updates)
+            self._handle_api_key_change(config_updates)
+            
             logger.info(f"Configuration updated: {config_updates}")
             return (200, {"message": "Configuration updated"})
         except json.JSONDecodeError as e:
             return (400, {"error": f"Invalid JSON payload: {e}"})
         except Exception as e:
             return (500, {"error": str(e)})
+    
+    def _handle_api_key_change(self, config_updates: Dict[str, Any]) -> None:
+        if 'llm.api_key' not in config_updates:
+            return
+        
+        conversation_service = self.services.get('conversation_service')
+        if not (conversation_service and hasattr(conversation_service, 'ai_client')):
+            return
+        
+        try:
+            conversation_service.ai_client._reinitialize_client()
+            logger.info("AI client re-initialized due to API key change")
+            
+        except Exception as e:
+            logger.error(f"Failed to re-initialize AI client: {e}")
 
     def _handle_get_status(self, payload) -> Tuple[int, Dict[str, Any]]:
         try:

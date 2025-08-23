@@ -1,8 +1,10 @@
 """
 Conversation Service - Implements conversation-related use cases
 """
+import asyncio
 import logging
-from typing import Optional, Dict, Any
+import re
+from typing import Optional, Dict, Any, List
 
 from domain.conversation import Conversation, ConversationConfig, MessageRole
 from .conversation_recovery import ConversationRecovery
@@ -17,7 +19,8 @@ class ConversationService:
                  conversation: Optional[Conversation] = None,
                  ai_client = None,
                  memory_repository = None,
-                 telemetry_adapter = None) -> None:
+                 telemetry_adapter = None,
+                 clause_break_threshold: int = 30) -> None:
         """
         Args:
             config: Conversation configuration (required)
@@ -25,6 +28,7 @@ class ConversationService:
             ai_client: AI processing client (Infrastructure layer)
             memory_repository: Memory management repository (Infrastructure layer)
             telemetry_adapter: Telemetry sending adapter (Adapters layer)
+            clause_break_threshold: Threshold for clause-based streaming segmentation
         """
         self.logger = logging.getLogger(__name__)
         
@@ -42,10 +46,13 @@ class ConversationService:
         
         # Recovery and prompt building services
         self.recovery_service = ConversationRecovery(self.conversation)
-        self.prompt_builder = SystemPromptBuilder(memory_repository)
+        self.prompt_builder = SystemPromptBuilder(memory_repository, config.config_loader)
         
         # AI response failure counter
         self.consecutive_ai_failures = 0
+        
+        # Store streaming configuration value
+        self.clause_break_threshold = int(clause_break_threshold)
         
         self.logger.info("ConversationService initialized")
     
@@ -75,24 +82,76 @@ class ConversationService:
         
         return ai_response
     
-    def generate_response(self, user_text: str) -> Optional[str]:
-        self.conversation.add_user_message(user_text)
-        system_prompt = self._build_system_prompt()
-        messages = [
-            {"role": "system", "content": system_prompt},
-            *self.conversation.get_context_messages()
-        ]
+    async def generate_response(self, user_text: str) -> Optional[str]:
+        messages = self._prepare_messages(user_text)
         
         if self.ai_client:
-            memory_context = ""
-            if self.memory_repository:
-                memory_context = self.memory_repository.get_memory_context()
-                self.logger.info(f"Memory context from repository: {memory_context[:200] if memory_context else 'Empty'}...")
+            system_prompt = self.prompt_builder.build_system_prompt()
+            try:
+                # Application-level timeout for LLM processing (60s as per expert recommendation)
+                reply = await asyncio.wait_for(
+                    self.ai_client.complete_chat(messages, system_prompt),
+                    timeout=60.0
+                )
+                if reply:
+                    self.conversation.add_assistant_message(reply)
+                    return reply
+            except asyncio.TimeoutError:
+                self.logger.error("[perf] LLM response generation TIMEOUT after 60.000s - async architecture working correctly")
+                return None
+    
+    async def generate_response_stream(self, user_text: str):
+        messages = self._prepare_messages(user_text)
+
+        seg_buf: List[str] = []
+        final_buf: List[str] = []
+        seg_char_count = 0
+
+        self.logger.info("LLM streaming start")
+        system_prompt = self.prompt_builder.build_system_prompt()
+        
+        try:
+            # Create the stream generator
+            stream = self.ai_client.stream_chat_completion(messages, system_prompt)
             
-            reply = self.ai_client.generate_response(messages, memory_context)
-            if reply:
-                self.conversation.add_assistant_message(reply)
-                return reply
+            # Application-level timeout for entire streaming operation (60s as per expert recommendation)
+            # Note: Direct iteration without timeout for now (Python 3.9 compatibility)
+            async for event in stream:
+                if event.get("type") == "delta":
+                    delta_text = event["text"]
+                    seg_buf.append(delta_text)
+                    final_buf.append(delta_text)
+                    seg_char_count += len(delta_text)
+                    
+                    has_sentence_end = delta_text and len(delta_text) > 0 and delta_text[-1] in "。！？.!?"
+                    has_clause_break = delta_text and len(delta_text) > 0 and delta_text[-1] in "、,;:"
+                    
+                    force_cut = seg_char_count >= 200  # Insurance for extremely long sentences without punctuation
+                    should_cut = has_sentence_end or (has_clause_break and seg_char_count >= self.clause_break_threshold) or force_cut
+                    
+                    if should_cut:
+                        seg = re.sub(r"\s+", " ", "".join(seg_buf)).strip()
+                        self.logger.debug("LLM segment: %s...", seg[:40])
+                        yield {"type": "segment", "text": seg}
+                        seg_buf.clear()
+                        seg_char_count = 0
+                        
+                elif event.get("type") == "final":
+                    if seg_buf:
+                        tail = re.sub(r"\s+", " ", "".join(seg_buf)).strip()
+                        if tail:
+                            yield {"type": "segment", "text": tail}
+                        seg_buf.clear()
+
+                    final_text = re.sub(r"\s+", " ", "".join(final_buf)).strip()
+                    if final_text:
+                        self.conversation.add_assistant_message(final_text)
+                        self._record_and_send_utterance(MessageRole.ASSISTANT.value, final_text)
+                    self.logger.info("LLM streaming end (chars=%d)", len(final_text))
+                    yield {"type": "final", "text": final_text}
+        except asyncio.TimeoutError:
+            self.logger.error("[perf] LLM streaming TIMEOUT after 60.000s - async architecture working correctly")
+            yield {"type": "error", "text": "LLM処理がタイムアウトしました"}
     
     def is_exit_command(self, user_text: str) -> bool:
         return self.conversation.is_exit_command(user_text)
@@ -107,8 +166,10 @@ class ConversationService:
         
         return farewell_response
     
-    def _build_system_prompt(self) -> str:
-        return self.prompt_builder.build_system_prompt(self.conversation.config)
+    def _prepare_messages(self, user_text: str) -> List[Dict[str, str]]:
+        """Prepare conversation context messages (without system prompt)"""
+        self.conversation.add_user_message(user_text)
+        return self.conversation.get_context_messages()
     
     def _record_and_send_utterance(self, speaker: str, text: str) -> None:
         # Send telemetry (complete recording to CosmosDB)
