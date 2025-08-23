@@ -1,6 +1,6 @@
 # PokePal – Open‑Source Conversational AI Framework
 
-**Version**: v0.0.88 | **Architecture**: Clean Architecture v2 Complete | **Initial Use Case**: Elderly Care
+**Version**: v0.1.61 | **Architecture**: Clean Architecture Complete | **Initial Use Case**: Elderly Care
 
 An open AI conversation framework running on edge devices with centralized management for multi-device deployment.
 Built with Azure IoT Edge for privacy-focused edge processing and automatic updates.
@@ -20,7 +20,7 @@ Designing natural interactions in shared living spaces, starting with elderly ca
 - **Edge Platform**: Azure IoT Edge
 - **Speech Recognition**: OpenAI Whisper API
 - **Conversational AI**: OpenAI GPT-4o-mini
-- **Text-to-Speech**: OpenAI TTS
+- **Text-to-Speech**: Azure Cognitive Services Speech
 - **Containerization**: Docker (ARM64 support)
 - **CI/CD**: Azure DevOps Pipeline
 - **Architecture**: Clean Architecture
@@ -80,26 +80,28 @@ Designing natural interactions in shared living spaces, starting with elderly ca
 PokePal/
 ├── EdgeSolution/                    # Azure IoT Edge Solution
 │   ├── modules/
-│   │   ├── voice_conversation_v2/   # Main voice conversation module
+│   │   ├── voice_conversation_v2/   # Main voice conversation module (v0.1.61)
 │   │   │   ├── domain/             # Domain layer (business logic)
 │   │   │   ├── application/        # Application layer (use cases)
 │   │   │   ├── adapters/           # Adapter layer (external interfaces)
 │   │   │   │   ├── input/          # Input adapters (IoT, signals)
 │   │   │   │   └── output/         # Output adapters (audio, telemetry)
 │   │   │   ├── infrastructure/     # Infrastructure layer (external dependencies)
-│   │   │   │   ├── ai/             # AI services (Whisper, GPT, TTS)
+│   │   │   │   ├── ai/             # AI services (Whisper, GPT-4o-mini, Azure TTS)
 │   │   │   │   ├── audio/          # Audio processing (VAD, devices)
 │   │   │   │   ├── config/         # Configuration management
 │   │   │   │   ├── memory/         # Memory management
+│   │   │   │   ├── iot/            # IoT Hub connection
 │   │   │   │   └── security/       # Security services
 │   │   │   ├── tests/              # Unit, integration & E2E tests
+│   │   │   ├── config/             # Configuration files
 │   │   │   └── main.py             # Entry point
 │   │   ├── system-monitor/         # System monitoring module
 │   │   └── base-image/             # Shared base image
 │   └── deployment.template.json    # Edge deployment configuration
-├── azure-functions/                # Azure Functions (cloud processing)
-│   ├── ConversationLogger/         # Conversation log storage
-│   └── MemoryGenerator/            # Memory file generation
+├── azure-functions/                # Azure Functions (Python)
+│   ├── ConversationLogger/         # Conversation log storage (Cosmos DB)
+│   └── MemoryGenerator/            # Memory file generation (hourly)
 ├── azure-initial-setup/            # Azure initial setup
 │   └── arm-templates/              # ARM Template collection
 ├── docs/                           # Project documentation
@@ -108,6 +110,7 @@ PokePal/
 │   ├── experimental/               # Experimental tests
 │   └── e2e/                        # End-to-End tests
 ├── scripts/                        # Development support scripts
+├── CLAUDE.md                       # Claude Code development guide
 └── azure-pipelines.yml            # CI/CD pipeline
 ```
 
@@ -127,16 +130,17 @@ MIT License - See [LICENSE](LICENSE) for details.
 ## 🎯 Development Status
 
 ### Completed Features
-- ✅ Clean Architecture implementation complete (v2)
-- ✅ Voice conversation system (Whisper + GPT-4o-mini + TTS)
+- ✅ Clean Architecture implementation complete
+- ✅ Voice conversation system (Whisper API + GPT-4o-mini + Azure TTS)
 - ✅ IoT Hub integration & remote control
-- ✅ Memory system & conversation history management
-- ✅ Proactive features (medication reminders, etc.)
-- ✅ Automated testing environment
+- ✅ 4-tier memory system (immediate/short/medium/long-term)
+- ✅ Proactive features (288 scheduled tasks for medication/meal reminders)
+- ✅ Azure Functions (ConversationLogger, MemoryGenerator)
+- ✅ Automated CI/CD pipeline with Azure DevOps
 
-### In Development
-- 🔄 TTS audio quality optimization
-- 🔄 Whisper model lightweight evaluation
+### Current Issues
+- ⚠️ Response speed optimization needed (currently 4-5 chars/sec)
+- ⚠️ TTS stability improvements (80% stable)
 
 ### 🚀 Future Roadmap
 
