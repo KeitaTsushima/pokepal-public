@@ -1,0 +1,4 @@
+azure-functions
+azure-cosmos>=4.5.0
+azure-iot-hub>=2.6.0
+cryptography==43.0.3
