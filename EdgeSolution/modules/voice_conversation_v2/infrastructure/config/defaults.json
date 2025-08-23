@@ -1,0 +1,110 @@
+{
+    "audio": {
+        "volume": 1.0,
+        "sample_rate": 16000,
+        "mic_device": null,
+        "speaker_device": null
+    },
+    "stt": {
+        "language": "ja",
+        "openai": {
+            "model": "whisper-1"
+        }
+    },
+    "conversation": {
+        "no_voice_sleep_threshold": 5,
+        "max_conversation_length": 100,
+        "context_window_size": 50,
+        "farewell_message": "わかりました。またお話ししましょう。"
+    },
+    "vad": {
+        "mode": 3,
+        "speech_threshold": 0.95,
+        "min_speech_duration": 0.5,
+        "max_silence_duration": 1.0,
+        "max_recording_duration": 30.0,
+        "frame_duration_ms": 30
+    },
+    "memory": {
+        "retention_days": 7,
+        "max_memory_files": 10,
+        "dir": "/app/memories",
+        "immediate_tokens": 25000,
+        "max_items_per_section": {
+            "preferences": 5,
+            "concerns": 5,
+            "keywords": 10,
+            "events": 5
+        }
+    },
+    "system": {
+        "log_level": "INFO",
+        "heartbeat_interval": 30,
+        "health_check_interval": 60
+    },
+    "tts": {
+        "provider": "azure_speech",
+        "region": "japaneast",
+        "voice_name": "ja-JP-NanamiNeural",
+        "speech_rate": 1.0,
+        "speech_pitch": 0,
+        "streaming": {
+            "enabled": true,
+            "min_sentences": 3,
+            "min_characters": 120,
+            "clause_break_threshold": 24,
+            "max_workers": 4,
+            "dynamic_rate": {
+                "start_rate": 0.7,
+                "end_rate": 1.0
+            }
+        },
+        "barge_in": {
+            "enabled": true,
+            "play_prompt": false,
+            "prompt_message": "はい、なんでしょうか"
+        },
+        "config_schema": {
+            "updatable_fields": ["voice_name", "speech_rate", "speech_pitch"],
+            "sync_fields": ["speech_rate"]
+        }
+    },
+    "synthesis": {
+        "silence_timeout_sec": 15
+    },
+    "llm": {
+        "model": "gpt-4o-mini",
+        "temperature": 0.7,
+        "max_tokens": 500,
+        "system_prompt": "あなたは高齢者の親切な話し相手です。優しく親しみやすい口調で会話してください。\nわかりやすい短めの文で話しますが、必要に応じて詳しく説明してもかまいません。\n\n過去の会話をしっかり覚えています。「昨日何を話した？」「さっき何て言った？」などと聞かれたら、記憶している具体的な内容を使って自然に答えてください。",
+        "token_encoding": "cl100k_base",
+        "memory_format": {
+            "short_term_memory": "最近の会話: {content}",
+            "preferences": "好きなこと: {content}",
+            "concerns": "関心事: {content}"
+        }
+    },
+    "greeting": {
+        "startup": "コンニチハ！ポケパル オンセイ タイワ システム ガ キドウ シマシタ。"
+    },
+    "error_messages": {
+        "apology_not_heard": "すみません聞き取れませんでした、もう一度お願いします。",
+        "proactive_error": "予定が入っています。スタッフにお知らせください。",
+        "synthesis_timeout": "音声生成に時間がかかっています。少し待ってから、もう一度お試しください。"
+    },
+    "telemetry": {
+        "message_type": "conversation",
+        "content_type": "application/json",
+        "content_encoding": "utf-8",
+        "output_name": "output1",
+        "log_text_limit": 50,
+        "retry_attempts": 3,
+        "retry_delay": 1.0
+    },
+    "proactive_data": {
+        "task_file": "proactive_tasks.json",
+        "queue_log_file": "task_executions.json",
+        "check_interval": 10,
+        "max_queue_size": 50
+    }
+}
