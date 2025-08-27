@@ -109,6 +109,25 @@ class STTClient:
             processing_time = time.time() - start_time
             text = transcript.strip() if transcript else ""
             
+            # Filter out common Whisper hallucinations
+            hallucination_patterns = [
+                "ご視聴ありがとうございました",
+                "ご視聴ありがとうございます", 
+                "はじめしゃちょー",
+                "チャンネル登録",
+                "高評価",
+                "コメント",
+                "Thank you for watching",
+                "Please subscribe",
+                "[Music]",
+                "[音楽]",
+                "(音楽)"
+            ]
+            
+            if any(pattern in text for pattern in hallucination_patterns):
+                self.logger.warning(f"Detected potential Whisper hallucination: {text}")
+                text = ""
+            
             # Performance metrics in expected format for monitoring
             self.logger.info(f"[perf] kv={kv_duration:.3f}s whisper={whisper_duration:.3f}s")
             

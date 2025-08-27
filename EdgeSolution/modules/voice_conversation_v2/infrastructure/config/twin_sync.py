@@ -54,6 +54,11 @@ class TwinSync:
     def receive_memory_summary(self, memory_update):
         logger.info("Received memory update: %s", memory_update)
         
+        # Handle None memory_update
+        if memory_update is None:
+            logger.warning("Received None memory_update, skipping")
+            return
+            
         blob_url = memory_update.get("url")
         sas_token = memory_update.get("sas")
         

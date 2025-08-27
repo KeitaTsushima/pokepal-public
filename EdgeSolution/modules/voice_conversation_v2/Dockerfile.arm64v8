@@ -1,6 +1,6 @@
 # Use base image (pre-built) - version controlled by Pipeline
 ARG BASE_VERSION
-FROM pokepalregistry.azurecr.io/voice-conversation-base:${BASE_VERSION}
+FROM myregistry.azurecr.io/voice-conversation-base:${BASE_VERSION}
 
 # Set working directory
 WORKDIR /app

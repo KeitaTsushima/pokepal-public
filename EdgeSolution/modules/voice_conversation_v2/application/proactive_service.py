@@ -59,6 +59,7 @@ class TaskType(Enum):
     PERSONAL_TASK = "personal_task"
     GREETING = "greeting"
     SOCIAL = "social"
+    REMINDER = "reminder"
     OTHER = "other"
 
 
@@ -159,12 +160,69 @@ class TaskRepository(Protocol):
 
 class JsonTaskRepository:
     
-    def __init__(self, file_path: str = "proactive_tasks.json"):
+    def __init__(self, config_loader, file_path: str = None):
+        # TODO: Phase 2 - Module Twin integration for cloud-based configuration sync
+        # Currently using local file storage, will integrate with IoT Hub Twin in Phase 2
+        if file_path is None:
+            file_path = config_loader.get("proactive_data.task_file", "/var/log/pokepal/config/proactive_tasks.json")
         self._file_path = file_path
+        self._config_loader = config_loader
         self._lock = threading.Lock()
         self._logger = logging.getLogger(__name__)
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(self._file_path), exist_ok=True)
     
     def load_tasks(self) -> List[ScheduledTask]:
+        # Load default tasks from config
+        default_tasks = self._load_default_tasks()
+        
+        # Load custom tasks from persistent file
+        custom_tasks = []
+        if os.path.exists(self._file_path):
+            custom_tasks = self._load_custom_tasks()
+        else:
+            # Initialize with default tasks if no custom file exists
+            self._write_tasks(default_tasks)
+            return default_tasks
+        
+        # Merge default and custom tasks
+        return self._merge_tasks(default_tasks, custom_tasks)
+    
+    def _load_default_tasks(self) -> List[ScheduledTask]:
+        """Load default tasks from configuration"""
+        default_task_configs = self._config_loader.get("proactive_data.default_tasks", [])
+        tasks = []
+        
+        # Get user name for placeholder replacement
+        user_name = self._config_loader.get("llm.user_name", "")
+        
+        for task_data in default_task_configs:
+            try:
+                # Deep copy to avoid modifying original config
+                task_data = task_data.copy()
+                
+                # Replace {user_name} placeholder in message
+                if "{user_name}" in task_data.get("message", ""):
+                    task_data["message"] = task_data["message"].format(user_name=user_name)
+                
+                # Convert string enums to Enum types
+                task_data['scope'] = TaskScope(task_data['scope'])
+                task_data['type'] = TaskType(task_data['type'])
+                
+                # Handle schedule pattern
+                schedule_data = task_data['schedule']
+                schedule_data['type'] = ScheduleType(schedule_data['type'])
+                task_data['schedule'] = SchedulePattern(**schedule_data)
+                
+                tasks.append(ScheduledTask(**task_data))
+            except (ValueError, KeyError, TypeError) as e:
+                self._logger.warning(f"Skipping invalid default task: {task_data}, error: {e}")
+        
+        return tasks
+    
+    def _load_custom_tasks(self) -> List[ScheduledTask]:
+        """Load custom tasks from persistent file"""
         if not os.path.exists(self._file_path):
             return []
         
@@ -190,8 +248,23 @@ class JsonTaskRepository:
                         continue
                 return tasks
         except Exception as e:
-            self._logger.error(f"Failed to load tasks: {e}")
+            self._logger.error(f"Failed to load custom tasks: {e}")
             return []
+    
+    def _merge_tasks(self, default_tasks: List[ScheduledTask], custom_tasks: List[ScheduledTask]) -> List[ScheduledTask]:
+        """Merge default and custom tasks, with custom tasks taking precedence"""
+        # Create a dict of custom tasks by ID for quick lookup
+        custom_task_dict = {task.id: task for task in custom_tasks}
+        
+        # Start with custom tasks
+        merged_tasks = custom_tasks.copy()
+        
+        # Add default tasks that are not overridden by custom tasks
+        for default_task in default_tasks:
+            if default_task.id not in custom_task_dict:
+                merged_tasks.append(default_task)
+        
+        return merged_tasks
     
     def _write_tasks(self, tasks: List[ScheduledTask]) -> None:
         """Save task list to JSON file"""
@@ -223,7 +296,7 @@ class TaskSchedulerService:
         self._task_repository = task_repository
         self._audio_output = audio_output
         self._conversation_service = conversation_service
-        self.config_loader = config_loader
+        self._config_loader = config_loader
         self._logger = logging.getLogger(__name__)
         self._active_tasks: List[ScheduledTask] = []
         self._running = False
@@ -328,13 +401,28 @@ class TaskSchedulerService:
         return matching_tasks
     
     def create_unified_message(self, tasks: List[ScheduledTask]) -> str:
-        if len(tasks) == 1:
-            return tasks[0].message  # Single task uses template
+        # Replace {user_name} placeholders in messages
+        user_name = self._config_loader.get("llm.user_name", "")
+        processed_tasks = []
+        for task in tasks:
+            task_copy = task  # Use original task object
+            if "{user_name}" in task.message:
+                # Create a shallow copy to avoid modifying original
+                task_copy = ScheduledTask(
+                    id=task.id, scope=task.scope, type=task.type, name=task.name,
+                    time=task.time, message=task.message.format(user_name=user_name),
+                    schedule=task.schedule, device_id=task.device_id, 
+                    active=task.active, created_by=task.created_by
+                )
+            processed_tasks.append(task_copy)
+        
+        if len(processed_tasks) == 1:
+            return processed_tasks[0].message  # Single task uses template
         
         if not self._conversation_service:
-            return self._create_fallback_message(tasks)
+            return self._create_fallback_message(processed_tasks)
         
-        prompt = self._build_smart_unification_prompt(tasks)
+        prompt = self._build_smart_unification_prompt(processed_tasks)
         
         try:
             unified_message = self._conversation_service.generate_response(prompt)
@@ -343,7 +431,7 @@ class TaskSchedulerService:
         except Exception as e:
             self._logger.error(f"Failed to generate unified message: {e}")
             # Fallback: simple concatenation
-            return self._create_fallback_message(tasks)
+            return self._create_fallback_message(processed_tasks)
     
     def start(self) -> None:
         self._reload_tasks()
@@ -827,7 +915,7 @@ class ProactiveService:
         queue_log_file = self.config_loader.get("proactive_data.queue_log_file")
         
         # Infrastructure layer initialization
-        self._task_repository = JsonTaskRepository(task_file)
+        self._task_repository = JsonTaskRepository(config_loader=self.config_loader, file_path=task_file)
         
         # Application layer initialization
         self._task_scheduler_service = TaskSchedulerService(

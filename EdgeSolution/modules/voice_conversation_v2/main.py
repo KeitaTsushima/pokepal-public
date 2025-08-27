@@ -34,7 +34,7 @@ from infrastructure.config.config_loader import ConfigLoader
 from infrastructure.config.twin_sync import TwinSync
 from infrastructure.iot.connection_manager import IoTConnectionManager
 from infrastructure.memory.memory_repository import MemoryRepository
-from infrastructure.ai.async_openai_shared import cleanup_shared_openai
+from infrastructure.ai.async_openai_shared import cleanup_shared_openai, get_shared_openai
 from infrastructure.security.async_key_vault import cleanup_async_key_vault, get_async_key_vault
 
 logging.basicConfig(
@@ -53,6 +53,7 @@ class Application:
         self.config_loader: Optional[ConfigLoader] = None
         self.signal_handler: Optional[SignalHandler] = None
         self.twin_sync: Optional[TwinSync] = None
+        self.memory_repository: Optional[MemoryRepository] = None
 
 
     # TODO: Split this method later
@@ -117,7 +118,7 @@ class Application:
         
         tts_client = TTSClient(self.config_loader)
         
-        memory_repository = MemoryRepository(
+        self.memory_repository = MemoryRepository(
             memory_dir=self.config_loader.get("memory.dir")
         )
         
@@ -139,7 +140,7 @@ class Application:
             logger.warning(f"Failed to sync with module twin, continuing with local config: {e}")
         
         # Initialize Twin sync (to receive memory updates)
-        self.twin_sync = TwinSync(self.config_loader, memory_repository, iot_connection_manager)
+        self.twin_sync = TwinSync(self.config_loader, self.memory_repository, iot_connection_manager)
         
         # 3. Build Adapters layer
         text_to_speech = AudioOutputAdapter(
@@ -160,7 +161,7 @@ class Application:
         conversation_service = ConversationService(
             config=conversation_config,
             ai_client=llm_client,
-            memory_repository=memory_repository,
+            memory_repository=self.memory_repository,
             telemetry_adapter=telemetry_sender,
             clause_break_threshold=self.config_loader.get('tts.streaming.clause_break_threshold')
         )
@@ -199,7 +200,7 @@ class Application:
             self.config_loader,
             services={
                 'conversation_service': conversation_service,
-                'memory_manager': memory_repository
+                'memory_manager': self.memory_repository
             },
             iot_client=iot_connection_manager.get_client()
         )
@@ -230,6 +231,39 @@ class Application:
             # Key Vault warmup (AAD authentication pre-establishment)
             # Temporarily disabled for debugging
             # await self._warmup_key_vault()
+            
+            # STT warmup to eliminate 3.5s delay on first conversation
+            if hasattr(self.voice_service, 'speech_to_text') and hasattr(self.voice_service.speech_to_text, '_lazy_warmup'):
+                logger.info("Starting STT warmup at startup...")
+                try:
+                    await self.voice_service.speech_to_text._lazy_warmup()
+                except Exception as e:
+                    logger.warning(f"STT warmup failed at startup: {e}")
+            
+            # LLM and SharedAsyncOpenAI warmup to eliminate 5s delay on first conversation
+            logger.info("Starting LLM warmup at startup...")
+            try:
+                # Initialize SharedAsyncOpenAI and HTTP client
+                shared_openai = await get_shared_openai()
+                
+                # Pre-fetch LLM client (includes Key Vault access and caching)
+                openai_secret_name = os.environ.get('OPENAI_SECRET_NAME')
+                if openai_secret_name:
+                    await shared_openai.get_llm_client(openai_secret_name)
+                    logger.info("LLM client pre-initialized and cached successfully")
+                else:
+                    logger.warning("OPENAI_SECRET_NAME not found, skipping LLM warmup")
+                    
+            except Exception as e:
+                logger.warning(f"LLM warmup failed at startup: {e}")
+            
+            # Pre-load memory file to eliminate disk I/O on first conversation
+            if self.memory_repository:
+                try:
+                    self.memory_repository.preload_memory()
+                    logger.info("Memory file pre-loaded for fast access")
+                except Exception as e:
+                    logger.warning(f"Memory preload failed: {e}")
             
             await self.voice_service.initialize()
             

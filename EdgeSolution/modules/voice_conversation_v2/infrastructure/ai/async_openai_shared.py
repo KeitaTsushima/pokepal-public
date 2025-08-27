@@ -6,7 +6,7 @@ import os
 import asyncio
 import httpx
 import logging
-from typing import Optional
+from typing import Optional, Dict
 from openai import AsyncOpenAI
 
 from ..security.async_key_vault import get_async_key_vault
@@ -22,6 +22,9 @@ class SharedAsyncOpenAI:
         self._http_client: Optional[httpx.AsyncClient] = None
         # No base client needed - we create new clients with real API keys
         self._initialized = False
+        
+        # Cache OpenAI clients (not API keys) to avoid repeated Key Vault access
+        self._client_cache: Dict[str, AsyncOpenAI] = {}
         
         # Semaphore controls for concurrent requests
         self._stt_semaphore = asyncio.Semaphore(
@@ -66,7 +69,7 @@ class SharedAsyncOpenAI:
     
     async def _get_openai_client(self, secret_name: str) -> AsyncOpenAI:
         """
-        Internal method to get AsyncOpenAI client with API key from Key Vault
+        Internal method to get AsyncOpenAI client with API key from Key Vault (cached)
         
         Args:
             secret_name: Name of the OpenAI API key secret in Key Vault
@@ -76,14 +79,25 @@ class SharedAsyncOpenAI:
         """
         await self._ensure_initialized()
         
+        # Return cached client if available
+        if secret_name in self._client_cache:
+            return self._client_cache[secret_name]
+        
+        # Get API key from Key Vault (only on first access)
         kv_client = await get_async_key_vault()
         api_key = await kv_client.get_secret(secret_name)
         
         # Create new client with real API key (HTTP client is shared)
-        return AsyncOpenAI(
+        client = AsyncOpenAI(
             api_key=api_key,
             http_client=self._http_client
         )
+        
+        # Cache the client for future use
+        self._client_cache[secret_name] = client
+        self.logger.info(f"Cached OpenAI client for secret: {secret_name}")
+        
+        return client
     
     async def get_stt_client(self, secret_name: str) -> AsyncOpenAI:
         """
@@ -125,14 +139,19 @@ class SharedAsyncOpenAI:
 
 # Global singleton instance for transport sharing
 _shared_openai_instance: Optional[SharedAsyncOpenAI] = None
+_lock = asyncio.Lock()
 
 
 async def get_shared_openai() -> SharedAsyncOpenAI:
-    """Get global SharedAsyncOpenAI instance"""
+    """Get global SharedAsyncOpenAI instance with thread-safe initialization"""
     global _shared_openai_instance
     
     if _shared_openai_instance is None:
-        _shared_openai_instance = SharedAsyncOpenAI()
+        async with _lock:
+            # Double-check pattern for thread safety
+            if _shared_openai_instance is None:
+                _shared_openai_instance = SharedAsyncOpenAI()
+                logging.getLogger(__name__).info("SharedAsyncOpenAI singleton created")
     
     return _shared_openai_instance
 

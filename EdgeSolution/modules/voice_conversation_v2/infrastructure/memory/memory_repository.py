@@ -27,6 +27,8 @@ class MemoryRepository:
         self.memory_dir = memory_dir
         self.retention_days = retention_days
         self.logger = logger
+        self._cached_memory = None  # Cache for pre-loaded memory
+        self._cache_date = None  # Date of cached memory
         
         # Create directory if it doesn't exist
         if not os.path.exists(self.memory_dir):
@@ -39,12 +41,39 @@ class MemoryRepository:
         # Cleanup old files during initialization
         self.cleanup_old_memories()
         
+    def preload_memory(self) -> None:
+        """
+        Pre-load the latest memory file into cache at startup
+        """
+        self._cached_memory = self._load_latest_memory()
+        self._cache_date = datetime.now().strftime("%Y%m%d")
+        if self._cached_memory:
+            self.logger.info("Memory pre-loaded and cached for fast access")
+    
     def get_current_memory(self) -> Dict[str, Any]:
         """
         Load the latest memory file (search from today backwards)
+        Uses cache if available and current
         
         Returns:
             Memory data (including short-term, medium-term, and long-term memory)
+        """
+        # Use cached memory if it's from today
+        today_str = datetime.now().strftime("%Y%m%d")
+        if self._cached_memory and self._cache_date == today_str:
+            self.logger.debug("Using cached memory")
+            return self._cached_memory
+        
+        # Otherwise, load from disk
+        memory = self._load_latest_memory()
+        if memory:
+            self._cached_memory = memory
+            self._cache_date = today_str
+        return memory
+    
+    def _load_latest_memory(self) -> Dict[str, Any]:
+        """
+        Internal method to load the latest memory file from disk
         """
         # Search for files from today to past retention period
         today = datetime.now()

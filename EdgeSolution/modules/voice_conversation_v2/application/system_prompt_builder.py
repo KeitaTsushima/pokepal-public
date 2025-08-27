@@ -48,6 +48,11 @@ class SystemPromptBuilder:
             # Get base system prompt from config
             base_prompt = self._config_loader.get("llm.system_prompt")
             
+            # Get user name and format the prompt
+            user_name = self._config_loader.get("llm.user_name", "")
+            if user_name:
+                base_prompt = base_prompt.format(user_name=user_name)
+            
             if not self._memory_repository:
                 return base_prompt
                 

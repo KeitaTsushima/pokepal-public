@@ -2,9 +2,9 @@
   "$schema-version": "0.0.1",
   "description": "Voice Conversation Module v2 - Clean Architecture",
   "image": {
-    "repository": "YOUR_ACR_NAME.azurecr.io/voice-conversation",
+    "repository": "pokepalregistry.azurecr.io/voice-conversation",
     "tag": {
-      "version": "0.1.60",
+      "version": "0.1.76",
       "platforms": {
         "arm64v8": "./Dockerfile.arm64v8"
       }

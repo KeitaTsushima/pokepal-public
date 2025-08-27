@@ -72,9 +72,12 @@ class LLMClient:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 stream=True,
+                stream_options={"include_usage": True}  # Add usage stats for debugging
             )
             
+            chunk_count = 0
             async for chunk in stream:
+                chunk_count += 1
                 try:
                     delta = chunk.choices[0].delta.content
                 except Exception:

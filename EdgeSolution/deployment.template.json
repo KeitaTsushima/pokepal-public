@@ -1,0 +1,225 @@
+{
+  "$schema-template": "4.0.0",
+  "modulesContent": {
+  "$edgeAgent": {
+      "properties.desired": {
+        "schemaVersion": "1.1",
+        "runtime": {
+          "type": "docker",
+          "settings": {
+            "minDockerVersion": "v1.25",
+            "loggingOptions": "",
+            "registryCredentials": {
+              "myregistrycred": {
+                "address": "myregistry.azurecr.io",
+                "username": "${ACR_USERNAME}",
+                "password": "${ACR_PASSWORD}"
+              }
+            }
+          }
+        },
+        "systemModules": {
+          "edgeAgent": {
+            "type": "docker",
+            "settings": {
+              "image": "mcr.microsoft.com/azureiotedge-agent:1.5",
+              "createOptions": {
+                "HostConfig": {
+                  "LogConfig": {
+                    "Type": "json-file",
+                    "Config": {
+                      "max-size": "10m",
+                      "max-file": "3"
+                    }
+                  }
+                }
+              }
+            },
+            "env": {
+              "BackupLogFiles": {
+                "value": "false"
+              }
+            }
+          },
+          "edgeHub": {
+            "type": "docker",
+            "status": "running",
+            "restartPolicy": "always",
+            "settings": {
+              "image": "mcr.microsoft.com/azureiotedge-hub:1.5",
+              "createOptions": {
+                "HostConfig": {
+                  "PortBindings": {
+                    "5671/tcp": [
+                      {
+                        "HostPort": "5671"
+                      }
+                    ],
+                    "8883/tcp": [
+                      {
+                        "HostPort": "8883"
+                      }
+                    ],
+                    "443/tcp": [
+                      {
+                        "HostPort": "443"
+                      }
+                    ]
+                  },
+                  "LogConfig": {
+                    "Type": "json-file",
+                    "Config": {
+                      "max-size": "10m",
+                      "max-file": "3"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "modules": {
+          "voice-conversation": {
+            "version": "1.0",
+            "type": "docker",
+            "status": "running",
+            "restartPolicy": "always",
+            "settings": {
+              "image": "${MODULES.voice-conversation}",
+              "createOptions": {
+                "HostConfig": {
+                  "Devices": [
+                    {
+                      "PathOnHost": "/dev/snd",
+                      "PathInContainer": "/dev/snd",
+                      "CgroupPermissions": "rwm"
+                    }
+                  ],
+                  "Privileged": true,
+                  "GroupAdd": ["audio"],
+                  "Binds": [
+                    "/dev/snd:/dev/snd",
+                    "/var/log/appdata:/var/log/appdata",
+                    "/var/log/appdata/memories:/app/memories",
+                    "/var/log/appdata/config:/var/log/appdata/config",
+                    "/etc/iotedge/kvcerts/app-kv.pem:/app-kv.pem:ro"
+                  ],
+                  "User": "0:0",
+                  "NanoCpus": 400000000,
+                  "Ulimits": [
+                    {
+                      "Name": "nofile",
+                      "Soft": 8192,
+                      "Hard": 8192
+                    }
+                  ],
+                  "LogConfig": {
+                    "Type": "json-file",
+                    "Config": {
+                      "max-size": "10m",
+                      "max-file": "3"
+                    }
+                  }
+                }
+              }
+            },
+            "env": {
+              "AUDIO_DEVICE": {
+                "value": "plughw:2,0"
+              },
+              "PLAYBACK_DEVICE": {
+                "value": "plughw:2,0"
+              },
+              "CAPTURE_DEVICE": {
+                "value": "plughw:3,0"
+              },
+              "LOG_DIR": {
+                "value": "/var/log/appdata"
+              },
+              "MEMORY_DIR": {
+                "value": "/app/memories"
+              },
+              "ENABLE_PROACTIVE_FEATURES": {
+                "value": "true"
+              },
+              "KEY_VAULT_URL": {
+                "value": "${KEY_VAULT_URL}"
+              },
+              "AZURE_TENANT_ID": {
+                "value": "${AZURE_TENANT_ID}"
+              },
+              "AZURE_CLIENT_ID": {
+                "value": "${AZURE_CLIENT_ID}"
+              },
+              "AZURE_CLIENT_CERTIFICATE_PATH": {
+                "value": "/app-kv.pem"
+              },
+              "AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT": {
+                "value": "${AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT}"
+              },
+              "OPENAI_SECRET_NAME": {
+                "value": "openai-api-key"
+              },
+              "AZURE_SPEECH_SECRET_NAME": {
+                "value": "azure-speech-key"
+              }
+            }
+          },
+          "system-monitor": {
+            "version": "1.0",
+            "type": "docker",
+            "status": "running",
+            "restartPolicy": "always",
+            "settings": {
+              "image": "${MODULES.system-monitor}",
+              "createOptions": {
+                "HostConfig": {
+                  "Binds": [
+                    "/var/run/docker.sock:/var/run/docker.sock"
+                  ],
+                  "LogConfig": {
+                    "Type": "json-file",
+                    "Config": {
+                      "max-size": "10m",
+                      "max-file": "3"
+                    }
+                  }
+                }
+              }
+            },
+            "env": {
+              "DISK_THRESHOLD_WARNING": {
+                "value": "70"
+              },
+              "DISK_THRESHOLD_CRITICAL": {
+                "value": "80"
+              },
+              "CHECK_INTERVAL": {
+                "value": "3600"
+              },
+              "CLEANUP_INTERVAL": {
+                "value": "21600"
+              }
+            }
+          }
+        }
+      }
+    },
+    "voice-conversation": {
+      "properties.desired": {
+      }
+    },
+  "$edgeHub": {
+      "properties.desired": {
+        "schemaVersion": "1.1",
+        "routes": {
+          "voiceConversationToIoTHub": "FROM /messages/modules/voice-conversation/outputs/output1 INTO $upstream",
+          "systemMonitorToIoTHub": "FROM /messages/modules/system-monitor/outputs/telemetry INTO $upstream"
+        },
+        "storeAndForwardConfiguration": {
+          "timeToLiveSecs": 7200
+        }
+      }
+    }
+  }
+}

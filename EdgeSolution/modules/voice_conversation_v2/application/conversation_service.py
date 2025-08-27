@@ -4,6 +4,7 @@ Conversation Service - Implements conversation-related use cases
 import asyncio
 import logging
 import re
+import time
 from typing import Optional, Dict, Any, List
 
 from domain.conversation import Conversation, ConversationConfig, MessageRole
@@ -101,22 +102,35 @@ class ConversationService:
                 return None
     
     async def generate_response_stream(self, user_text: str):
+        t1 = time.monotonic()
         messages = self._prepare_messages(user_text)
+        t2 = time.monotonic()
+        self.logger.debug(f"[timing] _prepare_messages: {t2-t1:.3f}s")
 
         seg_buf: List[str] = []
         final_buf: List[str] = []
         seg_char_count = 0
 
         self.logger.info("LLM streaming start")
+        t3 = time.monotonic()
         system_prompt = self.prompt_builder.build_system_prompt()
+        t4 = time.monotonic()
+        self.logger.debug(f"[timing] build_system_prompt: {t4-t3:.3f}s")
         
         try:
             # Create the stream generator
+            t5 = time.monotonic()
             stream = self.ai_client.stream_chat_completion(messages, system_prompt)
+            t6 = time.monotonic()
+            self.logger.debug(f"[timing] stream_chat_completion call: {t6-t5:.3f}s")
             
             # Application-level timeout for entire streaming operation (60s as per expert recommendation)
             # Note: Direct iteration without timeout for now (Python 3.9 compatibility)
+            t7 = time.monotonic()
             async for event in stream:
+                if t7:  # First iteration
+                    self.logger.debug(f"[timing] First stream event: {time.monotonic()-t7:.3f}s")
+                    t7 = None
                 if event.get("type") == "delta":
                     delta_text = event["text"]
                     seg_buf.append(delta_text)

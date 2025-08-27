@@ -123,12 +123,16 @@ class VoiceInteractionService:
         total_chars_processed = 0
         streaming_session_started = False
         
-        # Record user input for telemetry (moved from ConversationService)
-        self.conversation_service._record_and_send_utterance(MessageRole.USER.value, user_text)
-        
         # Process AI response stream
         try:
-            async for ev in self.conversation_service.generate_response_stream(user_text):
+            self.logger.debug("[timing] Calling generate_response_stream")
+            # Start LLM streaming first, then send telemetry asynchronously
+            stream_generator = self.conversation_service.generate_response_stream(user_text)
+            
+            # Send telemetry in background (non-blocking) after stream starts
+            asyncio.create_task(self._send_telemetry_async(MessageRole.USER.value, user_text))
+            
+            async for ev in stream_generator:
                 if ev["type"] == "segment":
                     segment_count += 1
                     segment_chars = len(ev["text"])
@@ -192,6 +196,13 @@ class VoiceInteractionService:
                 await self.audio_output.stop_streaming_session()
                 self.logger.info("[perf] TTS streaming session closed")
     
+    async def _send_telemetry_async(self, speaker: str, text: str) -> None:
+        """Send telemetry asynchronously to avoid blocking LLM response"""
+        try:
+            self.conversation_service._record_and_send_utterance(speaker, text)
+        except Exception as e:
+            self.logger.error(f"Failed to send telemetry: {e}")
+    
     async def _announce_farewell(self, user_text: str) -> None:
         farewell_message = self.conversation_service.handle_exit_command(user_text)
         
@@ -226,13 +237,14 @@ class VoiceInteractionService:
             if hasattr(self.audio_capture, 'cleanup'):
                 self.audio_capture.cleanup()
             
-            if hasattr(self.speech_to_text, 'cleanup'):
-                self.speech_to_text.cleanup()
+            # Don't cleanup STT client to preserve warmup state
+            # if hasattr(self.speech_to_text, 'cleanup'):
+            #     self.speech_to_text.cleanup()
             
             if hasattr(self.audio_output, 'cleanup'):
                 self.audio_output.cleanup()
                 
-            self.logger.info("Resource cleanup completed")
+            self.logger.info("Resource cleanup completed (STT preserved)")
         except Exception as e:
             self.logger.error(f"Error during resource cleanup: {e}")
     
