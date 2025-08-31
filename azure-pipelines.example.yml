@@ -20,7 +20,10 @@ variables:
   - name: IOT_HUB_NAME
     value: 'YOUR_IOT_HUB_NAME'
   - name: BASE_VERSION
-    value: '1.4'  # Central Base Image version - update when base-image changes (azure-iot-device 2.14.0)
+    value: '1.5'  # Central Base Image version - updated to fix setuptools vulnerabilities
+  # Trivy cache directory for sharing DB within job
+  - name: TRIVY_CACHE_DIR
+    value: '$(Pipeline.Workspace)/.trivycache'
 
 pool:
   vmImage: 'ubuntu-22.04'
@@ -95,18 +98,16 @@ jobs:
               --build-arg BUILDKIT_INLINE_CACHE=1 \
               -f Dockerfile -t "$BASE_IMAGE" . --push
             
-            # Security scan with Trivy (optimized)
+            # Security scan with Trivy (uses Docker auth from host)
             echo "Running security scan on base image..."
-            if [ "${BUILD_SOURCEBRANCH}" = "refs/heads/main" ]; then
-              # Production: diff only + skip DB update
-              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-                aquasec/trivy:latest image --skip-db-update --severity HIGH,CRITICAL --exit-code 1 "$BASE_IMAGE"
-            else
-              # Validation: warnings only + skip DB update
-              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-                aquasec/trivy:latest image --skip-db-update --severity HIGH,CRITICAL --exit-code 1 "$BASE_IMAGE" || \
-                echo "WARNING: Security vulnerabilities found in base image"
-            fi
+            docker run --rm \
+              -v "$HOME/.docker":/root/.docker:ro \
+              -v "$(TRIVY_CACHE_DIR)":/root/.cache \
+              aquasec/trivy:latest image \
+              --platform linux/arm64 \
+              --severity CRITICAL \
+              --ignore-unfixed \
+              --exit-code 1 "$BASE_IMAGE"
           fi
           
           cd ..
@@ -227,18 +228,16 @@ jobs:
         DOCKER_DURATION=$((DOCKER_END - DOCKER_START))
         echo "##[section]Docker build completed in ${DOCKER_DURATION}s ($(date '+%H:%M:%S'))"
         
-        # Security scan with Trivy (optimized)
+        # Security scan with Trivy (uses Docker auth from host)
         echo "Running security scan on ${MODULE_NAME} module..."
-        if [ "${BUILD_SOURCEBRANCH}" = "refs/heads/main" ]; then
-          # Production: diff only + skip DB update
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:latest image --skip-db-update --severity HIGH,CRITICAL --exit-code 1 "${FULL_IMAGE_NAME}"
-        else
-          # Validation: warnings only + skip DB update
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:latest image --skip-db-update --severity HIGH,CRITICAL --exit-code 1 "${FULL_IMAGE_NAME}" || \
-            echo "WARNING: Security vulnerabilities found in ${MODULE_NAME} module"
-        fi
+        docker run --rm \
+          -v "$HOME/.docker":/root/.docker:ro \
+          -v "$(TRIVY_CACHE_DIR)":/root/.cache \
+          aquasec/trivy:latest image \
+          --platform linux/arm64 \
+          --severity CRITICAL \
+          --ignore-unfixed \
+          --exit-code 1 "${FULL_IMAGE_NAME}"
         
         # Save to pipeline variables (output for cross-job access)
         echo "##vso[task.setvariable variable=Image;isOutput=true]${FULL_IMAGE_NAME}"

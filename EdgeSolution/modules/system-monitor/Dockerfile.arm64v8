@@ -19,7 +19,15 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY requirements.txt ./
-RUN pip install -r requirements.txt
+
+# Upgrade pip and setuptools to fix vulnerabilities
+RUN python -m pip install --no-cache-dir --upgrade \
+    pip>=24.0 \
+    setuptools>=78.1.1 \
+    wheel>=0.45
+
+# Install application dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

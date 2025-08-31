@@ -10,6 +10,12 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip and setuptools to fix vulnerabilities
+RUN python -m pip install --no-cache-dir --upgrade \
+    pip>=24.0 \
+    setuptools>=78.1.1 \
+    wheel>=0.45
+
 # Install Azure Infrastructure + Core AI packages
 RUN pip install --no-cache-dir \
     azure-iot-device==2.14.0 \
