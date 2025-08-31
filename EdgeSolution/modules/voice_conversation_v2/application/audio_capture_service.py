@@ -202,7 +202,7 @@ class AudioCaptureService:
             
             self.logger.debug(f"STT optimization: {input_file} -> {optimized_file}")
             t0 = time.time()
-            # 目安: 入力秒数 × 0.3 + 3秒（RasPi想定）。上限/下限を付与。
+            # Estimate: input_seconds × 0.3 + 3 seconds (assuming RasPi). Apply upper/lower limits.
             est_timeout = max(6, min(30, int((os.path.getsize(input_file) / (32000)) * 0.3 + 3)))
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=est_timeout)
             t1 = time.time()

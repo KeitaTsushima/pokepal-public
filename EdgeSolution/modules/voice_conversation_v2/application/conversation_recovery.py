@@ -44,8 +44,8 @@ class ConversationRecovery:
         self._conversation = conversation
         self._recovery_completed = False
         self._recovered_message_count = 0
-        self._recovery_success = None  # None: 未実行, True: 成功, False: 失敗
-        self._recovery_error = None    # 失敗時のエラー情報
+        self._recovery_success = None  # None: Not executed, True: Success, False: Failure
+        self._recovery_error = None    # Error information on failure
     
     def recover_conversations(self, recovery_data: Dict[str, Any]) -> None:
         """
