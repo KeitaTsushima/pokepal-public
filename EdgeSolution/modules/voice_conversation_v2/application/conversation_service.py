@@ -65,14 +65,14 @@ class ConversationService:
             self.consecutive_ai_failures += 1
             
             if self.consecutive_ai_failures >= 3:
-                ai_response = self.conversation.config.get(
-                    'system_error_message', 
+                ai_response = self.conversation.config.config_loader.get(
+                    'conversation.system_error_message', 
                     "申し訳ございません。システムに問題が発生しています。しばらくお待ちください。"
                 )
                 self.logger.error(f"AI response generation failed 3 times consecutively")
             else:
-                ai_response = self.conversation.config.get(
-                    'fallback_message', 
+                ai_response = self.conversation.config.config_loader.get(
+                    'conversation.fallback_message', 
                     "すみません、もう一度言っていただけますか？"
                 )
                 self.logger.warning(f"AI response generation failed ({self.consecutive_ai_failures}/3 times)")
