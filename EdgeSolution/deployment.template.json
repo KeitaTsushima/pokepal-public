@@ -128,7 +128,7 @@
                 "value": "plughw:2,0"
               },
               "PLAYBACK_DEVICE": {
-                "value": "plughw:2,0"
+                "value": "plughw:0,0"
               },
               "CAPTURE_DEVICE": {
                 "value": "plughw:3,0"
