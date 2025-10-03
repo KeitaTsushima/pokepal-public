@@ -16,6 +16,7 @@ Designing natural interactions in shared living spaces, starting with elderly ca
 
 ## 🛠 Tech Stack
 
+### Edge & Backend
 - **Language**: Python 3.11
 - **Edge Platform**: Azure IoT Edge
 - **Speech Recognition**: OpenAI Whisper API
@@ -24,6 +25,14 @@ Designing natural interactions in shared living spaces, starting with elderly ca
 - **Containerization**: Docker (ARM64 support)
 - **CI/CD**: Azure DevOps Pipeline
 - **Architecture**: Clean Architecture
+
+### Admin Dashboard (NEW)
+- **Frontend**: Vue 3 (Composition API)
+- **Build Tool**: Vite
+- **State Management**: Pinia
+- **HTTP Client**: axios
+- **Backend API**: Azure Functions (Python 3.11)
+- **Database**: Azure Cosmos DB
 
 ## 📋 Requirements
 
@@ -80,7 +89,7 @@ Designing natural interactions in shared living spaces, starting with elderly ca
 PokePal/
 ├── EdgeSolution/                    # Azure IoT Edge Solution
 │   ├── modules/
-│   │   ├── voice_conversation_v2/   # Main voice conversation module (v0.1.61)
+│   │   ├── voice_conversation_v2/   # Main voice conversation module (v0.1.77)
 │   │   │   ├── domain/             # Domain layer (business logic)
 │   │   │   ├── application/        # Application layer (use cases)
 │   │   │   ├── adapters/           # Adapter layer (external interfaces)
@@ -101,7 +110,16 @@ PokePal/
 │   └── deployment.template.json    # Edge deployment configuration
 ├── azure-functions/                # Azure Functions (Python)
 │   ├── ConversationLogger/         # Conversation log storage (Cosmos DB)
-│   └── MemoryGenerator/            # Memory file generation (hourly)
+│   ├── MemoryGenerator/            # Memory file generation (hourly)
+│   └── DeviceStatusAPI/            # Device status API for admin dashboard
+├── admin/                          # Admin Dashboard (Vue.js + Vite)
+│   ├── src/
+│   │   ├── api/                    # API client (axios)
+│   │   ├── stores/                 # State management (Pinia)
+│   │   ├── utils/                  # Utility functions
+│   │   ├── App.vue                 # Main component
+│   │   └── main.js                 # Entry point
+│   └── package.json                # npm dependencies
 ├── azure-initial-setup/            # Azure initial setup
 │   └── arm-templates/              # ARM Template collection
 ├── docs/                           # Project documentation
@@ -135,8 +153,9 @@ MIT License - See [LICENSE](LICENSE) for details.
 - ✅ IoT Hub integration & remote control
 - ✅ 4-tier memory system (immediate/short/medium/long-term)
 - ✅ Proactive features (288 scheduled tasks for medication/meal reminders)
-- ✅ Azure Functions (ConversationLogger, MemoryGenerator)
+- ✅ Azure Functions (ConversationLogger, MemoryGenerator, DeviceStatusAPI)
 - ✅ Automated CI/CD pipeline with Azure DevOps
+- ✅ Admin Dashboard Phase 1 (Device status monitoring with real-time data)
 
 ### Current Issues
 - ⚠️ Response speed optimization needed (currently 4-5 chars/sec)
@@ -148,9 +167,9 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 **Late August 2025**: Multi-device deployment with NVIDIA Jetson platform. Device design consultation for physical form factor
 
-**September 2025**: Web-based admin dashboard development using Vue.js. Mobile application development for iOS platform
+**September 2025**: Web-based admin dashboard development using Vue.js (✅ Phase 1 Complete). Mobile application development for iOS platform
 
-**October 2025**: Pilot deployment with initial customers. Staff monitoring and control application development
+**October 2025**: Admin dashboard Phase 2-5 (User management, scheduling, Module Twin integration, authentication). Pilot deployment with initial customers
 
 **November 2025**: Interactive robot integration with [Reachy Mini platform](https://huggingface.co/blog/reachy-mini)
 
