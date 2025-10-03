@@ -1,6 +1,6 @@
 # PokePal – Open‑Source Conversational AI Framework
 
-**Version**: v0.1.61 | **Architecture**: Clean Architecture Complete | **Initial Use Case**: Elderly Care
+**Version**: v0.1.77 | **Architecture**: Clean Architecture Complete | **Initial Use Case**: Elderly Care
 
 An open AI conversation framework running on edge devices with centralized management for multi-device deployment.
 Built with Azure IoT Edge for privacy-focused edge processing and automatic updates.
@@ -38,7 +38,7 @@ Designing natural interactions in shared living spaces, starting with elderly ca
 
 ### Hardware Requirements
 - Raspberry Pi 5 (8GB RAM) - Currently supported
-- NVIDIA Jetson Orin Nano - Planned support (August 2025)
+- NVIDIA Jetson Orin Nano - Currently supported
 - USB Microphone & Speakers
 - 32GB+ Storage
 
@@ -123,10 +123,6 @@ PokePal/
 ├── azure-initial-setup/            # Azure initial setup
 │   └── arm-templates/              # ARM Template collection
 ├── docs/                           # Project documentation
-├── tests/                          # E2E & integration tests
-│   ├── integration/                # Integration tests
-│   ├── experimental/               # Experimental tests
-│   └── e2e/                        # End-to-End tests
 ├── scripts/                        # Development support scripts
 ├── CLAUDE.md                       # Claude Code development guide
 └── azure-pipelines.yml            # CI/CD pipeline
@@ -163,17 +159,18 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ### 🚀 Future Roadmap
 
-**Early August 2025**: Code quality assurance and optimization. Open source release preparation
+**October 2025**: Continue Vue.js admin dashboard development (Phase 2-5)
+- Complete integration of device, cloud, and browser-based admin dashboard
 
-**Late August 2025**: Multi-device deployment with NVIDIA Jetson platform. Device design consultation for physical form factor
+**November 2025**:
+- Parallel development of iOS mobile application for staff monitoring
+- Customer interviews (subject to progress)
+- **Late November**: Reachy Mini integration - port current program and verify operation upon delivery
 
-**September 2025**: Web-based admin dashboard development using Vue.js (✅ Phase 1 Complete). Mobile application development for iOS platform
-
-**October 2025**: Admin dashboard Phase 2-5 (User management, scheduling, Module Twin integration, authentication). Pilot deployment with initial customers
-
-**November 2025**: Interactive robot integration with [Reachy Mini platform](https://huggingface.co/blog/reachy-mini)
-
-**End of Year Goal**: Comprehensive elderly care ecosystem with autonomous conversational devices, centralized monitoring dashboard, and mobile staff applications
+**End of Year Goal**: Comprehensive elderly care ecosystem with:
+- Autonomous conversational devices and robots (including eye contact capability)
+- Centralized monitoring dashboard
+- Mobile staff applications for real-time status checks
 
 ## 🎯 Philosophy
 
