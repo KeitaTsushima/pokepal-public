@@ -46,7 +46,7 @@ def memory_generator(myTimer: func.TimerRequest) -> None:
         container = database.get_container_client("conversations")
         
         # Get device list (currently fixed, will get from IoT Hub in future)
-        device_ids = ["PokepalDevice1"]  # TODO: Get from registry_manager.get_devices()
+        device_ids = ["PokepalDevice1", "PokepalDevice2"]  # TODO: Get from registry_manager.get_devices()
         # TODO: user_id support - identify user_id per device
         
         for device_id in device_ids:
