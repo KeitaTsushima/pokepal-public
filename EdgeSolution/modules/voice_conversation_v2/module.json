@@ -4,7 +4,7 @@
   "image": {
     "repository": "pokepalregistry.azurecr.io/voice-conversation",
     "tag": {
-      "version": "0.1.76",
+      "version": "0.1.77",
       "platforms": {
         "arm64v8": "./Dockerfile.arm64v8"
       }
