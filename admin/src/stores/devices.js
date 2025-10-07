@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { fetchDevices } from '../api/devices';
+import { connectSignalR, disconnectSignalR, onDeviceUpdated } from '../utils/signalr';
 
 export const useDevicesStore = defineStore('devices', () => {
   const devices = ref([]);
@@ -22,6 +23,9 @@ export const useDevicesStore = defineStore('devices', () => {
 
     try {
       devices.value = await fetchDevices(abortController.signal);
+
+      // Connect to SignalR after initial data load
+      await initializeSignalR();
     } catch (err) {
       if (err.name === 'AbortError') {
         // Cancelled by user, do nothing
@@ -34,10 +38,41 @@ export const useDevicesStore = defineStore('devices', () => {
     }
   }
 
+  async function initializeSignalR() {
+    try {
+      await connectSignalR();
+
+      // Register handler for device updates
+      onDeviceUpdated((updatedDevices) => {
+        console.log('[Store] Received device update:', updatedDevices);
+
+        // Merge updated devices with existing devices
+        updatedDevices.forEach(updated => {
+          const index = devices.value.findIndex(d => d.deviceId === updated.deviceId);
+          if (index !== -1) {
+            // Update existing device
+            devices.value[index] = updated;
+          } else {
+            // Add new device
+            devices.value.push(updated);
+          }
+        });
+      });
+    } catch (err) {
+      console.error('[Store] SignalR initialization failed:', err);
+      // Don't show error to user - initial data is already loaded
+    }
+  }
+
+  function cleanup() {
+    disconnectSignalR();
+  }
+
   return {
     devices,
     loading,
     error,
-    loadDevices
+    loadDevices,
+    cleanup
   };
 });
