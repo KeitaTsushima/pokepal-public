@@ -1,20 +1,37 @@
 <script setup>
-import { onMounted, onErrorCaptured } from 'vue';
+import { ref, onMounted, onUnmounted, onErrorCaptured } from 'vue';
 import { useDevicesStore } from './stores/devices';
 import { formatDeviceName, formatStatus, formatRelativeTime } from './utils/formatters';
 
 const devicesStore = useDevicesStore();
 
-// Error Boundary - 予期しないエラーをキャッチ
+// Current time updated every minute for relative time display
+const currentTime = ref(Date.now());
+let timeUpdateInterval = null;
+
+// Error Boundary - catch unexpected errors
 onErrorCaptured((err) => {
   console.error('[Error Boundary]', err);
   devicesStore.error = '予期しないエラーが発生しました。';
-  return false; // エラー伝播を停止
+  return false; // Stop error propagation
 });
 
-// 画面表示時にデバイス情報を取得
+// Load device data on mount
 onMounted(() => {
   devicesStore.loadDevices();
+
+  // Update current time every minute to refresh relative time display
+  timeUpdateInterval = setInterval(() => {
+    currentTime.value = Date.now();
+  }, 60000); // 60 seconds
+});
+
+// Clean up timer on unmount
+onUnmounted(() => {
+  if (timeUpdateInterval) {
+    clearInterval(timeUpdateInterval);
+  }
+  devicesStore.cleanup();
 });
 </script>
 
@@ -34,7 +51,7 @@ onMounted(() => {
   <div v-else>
     <div v-for="device in devicesStore.devices" :key="device.deviceId" class="device-card">
       <p>{{ formatDeviceName(device.deviceId) }} - {{ formatStatus(device.status) }}</p>
-      <p>最終更新: {{ formatRelativeTime(device.lastSeen) }}</p>
+      <p>最終更新: {{ formatRelativeTime(device.lastSeen, currentTime) }}</p>
       <p v-if="device.lastConversation">
         最後の会話: 「{{ device.lastConversation.text }}」
       </p>

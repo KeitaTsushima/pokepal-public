@@ -23,12 +23,15 @@ export function formatStatus(status) {
 
 /**
  * Format timestamp to relative time
+ * @param {string} timestamp - ISO timestamp string
+ * @param {number|object} currentTime - Current time in ms (Vue ref or number) for auto-update
  * @returns {string} Relative time string (e.g., "5分前", "2時間前", "たった今")
  */
-export function formatRelativeTime(timestamp) {
+export function formatRelativeTime(timestamp, currentTime) {
   if (!timestamp) return '不明';
 
-  const now = new Date();
+  // Extract value from Vue ref if needed
+  const now = currentTime?.value ? new Date(currentTime.value) : new Date();
   // Add 'Z' suffix if not present to treat as UTC
   const timestampStr = timestamp.endsWith('Z') ? timestamp : timestamp + 'Z';
   const then = new Date(timestampStr);
