@@ -459,40 +459,34 @@ jobs:
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
-        echo "=== Starting Azure Functions deployment (optimized) ==="
-        
-        # Deploy Function Apps using zip deployment (faster)
+        echo "=== Starting Azure Functions deployment (remote build) ==="
+
+        # Install Azure Functions Core Tools
+        npm install -g azure-functions-core-tools@4 --unsafe-perm true
+
         cd azure-functions
-        
-        echo "Deploying ConversationLogger with zip deployment..."
+
+        echo "Deploying ConversationLogger with remote build..."
         cd ConversationLogger
-        # Install dependencies locally for zip deployment
-        pip install -r requirements.txt -t .python_packages/lib/site-packages
-        # Create optimized zip (exclude cache files)
-        zip -r ConversationLogger.zip . -x "*.pyc" "__pycache__/*" ".pytest_cache/*" "*.git*"
-        az functionapp deployment source config-zip \
-          -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNC \
-          --src ConversationLogger.zip
-        # Enable run from package for performance and set build flag
+        # Enable remote build for dependency installation
         az functionapp config appsettings set \
           -g YOUR_RESOURCE_GROUP -n YOUR_CONVERSATION_LOGGER_FUNC \
-          --settings WEBSITE_RUN_FROM_PACKAGE=1 SCM_DO_BUILD_DURING_DEPLOYMENT=false
+          --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true
+        # Deploy with remote build (dependencies installed on Azure)
+        func azure functionapp publish YOUR_CONVERSATION_LOGGER_FUNC --build remote
         cd ..
-        
-        echo "Deploying MemoryGenerator with zip deployment..."
+
+        echo "Deploying MemoryGenerator with remote build..."
         cd MemoryGenerator
-        # Install dependencies locally for zip deployment
-        pip install -r requirements.txt -t .python_packages/lib/site-packages
-        zip -r MemoryGenerator.zip . -x "*.pyc" "__pycache__/*" ".pytest_cache/*" "*.git*"
-        az functionapp deployment source config-zip \
-          -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNC \
-          --src MemoryGenerator.zip
+        # Enable remote build for dependency installation
         az functionapp config appsettings set \
           -g YOUR_RESOURCE_GROUP -n YOUR_MEMORY_GENERATOR_FUNC \
-          --settings WEBSITE_RUN_FROM_PACKAGE=1 SCM_DO_BUILD_DURING_DEPLOYMENT=false
+          --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true
+        # Deploy with remote build (dependencies installed on Azure)
+        func azure functionapp publish YOUR_MEMORY_GENERATOR_FUNC --build remote
         cd ..
-        
-        echo "=== Azure Functions deployment completed (zip method) ===" 
+
+        echo "=== Azure Functions deployment completed (remote build) ===" 
         
         echo "=== Configuring Function Apps with Key Vault references ==="
         
