@@ -31,3 +31,7 @@ pip-delete-this-directory.txt
 *.log
 .tmp/
 temp/
+
+# Azure Functions
+local.settings.json
+.python_packages/
