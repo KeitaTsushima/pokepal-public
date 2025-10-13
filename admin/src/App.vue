@@ -1,78 +1,66 @@
 <script setup>
-import { ref, onMounted, onUnmounted, onErrorCaptured } from 'vue';
-import { useDevicesStore } from './stores/devices';
-import { formatDeviceName, formatStatus, formatRelativeTime } from './utils/formatters';
-
-const devicesStore = useDevicesStore();
-
-// Current time updated every minute for relative time display
-const currentTime = ref(Date.now());
-let timeUpdateInterval = null;
+import { onErrorCaptured } from 'vue';
 
 // Error Boundary - catch unexpected errors
 onErrorCaptured((err) => {
   console.error('[Error Boundary]', err);
-  devicesStore.error = '予期しないエラーが発生しました。';
   return false; // Stop error propagation
-});
-
-// Load device data on mount
-onMounted(() => {
-  devicesStore.loadDevices();
-
-  // Update current time every minute to refresh relative time display
-  timeUpdateInterval = setInterval(() => {
-    currentTime.value = Date.now();
-  }, 60000); // 60 seconds
-});
-
-// Clean up timer on unmount
-onUnmounted(() => {
-  if (timeUpdateInterval) {
-    clearInterval(timeUpdateInterval);
-  }
-  devicesStore.cleanup();
 });
 </script>
 
 <template>
-  <h1>PokePal 管理画面</h1>
+  <div id="app">
+    <header>
+      <h1>PokePal 管理画面</h1>
+      <nav>
+        <router-link to="/">デバイス一覧</router-link>
+        <router-link to="/users">利用者管理</router-link>
+      </nav>
+    </header>
 
-  <!-- ローディング表示 -->
-  <div v-if="devicesStore.loading">読み込み中...</div>
-
-  <!-- エラー表示 + 再試行ボタン -->
-  <div v-else-if="devicesStore.error" class="error-card">
-    <p>{{ devicesStore.error }}</p>
-    <button @click="devicesStore.loadDevices()">再試行</button>
-  </div>
-
-  <!-- デバイス一覧 -->
-  <div v-else>
-    <div v-for="device in devicesStore.devices" :key="device.deviceId" class="device-card">
-      <p>{{ formatDeviceName(device.deviceId) }} - {{ formatStatus(device.status) }}</p>
-      <p>最終更新: {{ formatRelativeTime(device.lastSeen, currentTime) }}</p>
-      <p v-if="device.lastConversation">
-        最後の会話: 「{{ device.lastConversation.text }}」
-      </p>
-    </div>
+    <main>
+      <router-view />
+    </main>
   </div>
 </template>
 
 <style>
-.device-card {
-  border: 1px solid #ddd;
-  padding: 15px;
-  margin: 10px 0;
-  border-radius: 5px;
-  background: #f9f9f9;
+#app {
+  font-family: Arial, sans-serif;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
 }
 
-.error-card {
-  border: 1px solid #f44;
-  padding: 15px;
-  margin: 10px 0;
-  border-radius: 5px;
-  background: #fee;
+header {
+  margin-bottom: 30px;
+}
+
+h1 {
+  margin-bottom: 20px;
+}
+
+nav {
+  display: flex;
+  gap: 20px;
+  border-bottom: 2px solid #ddd;
+  padding-bottom: 10px;
+}
+
+nav a {
+  text-decoration: none;
+  color: #333;
+  padding: 5px 10px;
+  border-radius: 3px;
+}
+
+nav a.router-link-active {
+  background: #007bff;
+  color: white;
+}
+
+nav a:hover {
+  background: #0056b3;
+  color: white;
 }
 </style>
