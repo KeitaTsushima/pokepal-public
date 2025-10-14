@@ -121,7 +121,13 @@ def get_user_by_id(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.route(route="users", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
-def create_user(req: func.HttpRequest) -> func.HttpResponse:
+@app.generic_output_binding(
+    arg_name="signalRMessages",
+    type="signalR",
+    hubName="deviceStatus",
+    connection="AzureSignalRConnectionString"
+)
+def create_user(req: func.HttpRequest, signalRMessages: func.Out[str]) -> func.HttpResponse:
     """Create a new user.
 
     Request body:
@@ -172,6 +178,14 @@ def create_user(req: func.HttpRequest) -> func.HttpResponse:
         created_user = users_container.create_item(body=req_body)
         logger.info("User created: %s", req_body["id"])
 
+        # Send SignalR notification
+        signalr_message = {
+            'target': 'userUpdated',
+            'arguments': [created_user]
+        }
+        signalRMessages.set(json.dumps(signalr_message))
+        logger.info("Sent SignalR notification for user creation: %s", req_body["id"])
+
         return func.HttpResponse(
             json.dumps(created_user),
             mimetype="application/json",
@@ -193,7 +207,13 @@ def create_user(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.route(route="users/{id}", methods=["PUT"], auth_level=func.AuthLevel.ANONYMOUS)
-def update_user(req: func.HttpRequest) -> func.HttpResponse:
+@app.generic_output_binding(
+    arg_name="signalRMessages",
+    type="signalR",
+    hubName="deviceStatus",
+    connection="AzureSignalRConnectionString"
+)
+def update_user(req: func.HttpRequest, signalRMessages: func.Out[str]) -> func.HttpResponse:
     """Update an existing user.
 
     Args:
@@ -242,6 +262,14 @@ def update_user(req: func.HttpRequest) -> func.HttpResponse:
         updated_user = users_container.replace_item(item=user_id, body=req_body)
         logger.info("User updated: %s", user_id)
 
+        # Send SignalR notification
+        signalr_message = {
+            'target': 'userUpdated',
+            'arguments': [updated_user]
+        }
+        signalRMessages.set(json.dumps(signalr_message))
+        logger.info("Sent SignalR notification for user update: %s", user_id)
+
         return func.HttpResponse(
             json.dumps(updated_user),
             mimetype="application/json",
@@ -263,7 +291,13 @@ def update_user(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.route(route="users/{id}", methods=["DELETE"], auth_level=func.AuthLevel.ANONYMOUS)
-def delete_user(req: func.HttpRequest) -> func.HttpResponse:
+@app.generic_output_binding(
+    arg_name="signalRMessages",
+    type="signalR",
+    hubName="deviceStatus",
+    connection="AzureSignalRConnectionString"
+)
+def delete_user(req: func.HttpRequest, signalRMessages: func.Out[str]) -> func.HttpResponse:
     """Delete a user.
 
     Args:
@@ -291,6 +325,14 @@ def delete_user(req: func.HttpRequest) -> func.HttpResponse:
         # Delete user from Cosmos DB
         users_container.delete_item(item=user_id, partition_key=user_id)
         logger.info("User deleted: %s", user_id)
+
+        # Send SignalR notification
+        signalr_message = {
+            'target': 'userDeleted',
+            'arguments': [{'id': user_id}]
+        }
+        signalRMessages.set(json.dumps(signalr_message))
+        logger.info("Sent SignalR notification for user deletion: %s", user_id)
 
         return func.HttpResponse(
             json.dumps({"message": "User deleted successfully"}),
