@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { fetchUsers, createUser, updateUser, deleteUser } from '../api/users';
+import { connectSignalR, disconnectSignalR, onUserUpdated, onUserDeleted } from '../utils/signalr';
 
 export const useUsersStore = defineStore('users', () => {
   const users = ref([]);
@@ -25,6 +26,9 @@ export const useUsersStore = defineStore('users', () => {
 
     try {
       users.value = await fetchUsers(abortController.signal);
+
+      // Connect to SignalR after initial data load
+      await initializeSignalR();
     } catch (err) {
       if (err.name === 'AbortError') {
         // Cancelled by user, do nothing
@@ -38,6 +42,46 @@ export const useUsersStore = defineStore('users', () => {
   }
 
   /**
+   * Initialize SignalR connection and register event handlers
+   */
+  async function initializeSignalR() {
+    try {
+      await connectSignalR();
+
+      // Register handler for user updates (create/update)
+      onUserUpdated((updatedUser) => {
+        console.log('[Store] Received user update:', updatedUser);
+
+        const index = users.value.findIndex(u => u.id === updatedUser.id);
+        if (index !== -1) {
+          // Update existing user
+          users.value[index] = updatedUser;
+        } else {
+          // Add new user
+          users.value.push(updatedUser);
+        }
+      });
+
+      // Register handler for user deletion
+      onUserDeleted((deletedUser) => {
+        console.log('[Store] Received user deletion:', deletedUser);
+
+        users.value = users.value.filter(u => u.id !== deletedUser.id);
+      });
+    } catch (err) {
+      console.error('[Store] SignalR initialization failed:', err);
+      // Don't show error to user - initial data is already loaded
+    }
+  }
+
+  /**
+   * Cleanup SignalR connection
+   */
+  function cleanup() {
+    disconnectSignalR();
+  }
+
+  /**
    * Add new user
    * @param {Object} userData - User data
    */
@@ -47,7 +91,8 @@ export const useUsersStore = defineStore('users', () => {
 
     try {
       const newUser = await createUser(userData);
-      users.value.push(newUser);
+      // Don't add locally - let SignalR event handler do it
+      // This prevents duplicate entries in the creating browser
       return newUser;
     } catch (err) {
       error.value = err.message;
@@ -68,13 +113,7 @@ export const useUsersStore = defineStore('users', () => {
 
     try {
       const updatedUser = await updateUser(id, userData);
-
-      // Update in local state
-      const index = users.value.findIndex(u => u.id === id);
-      if (index !== -1) {
-        users.value[index] = updatedUser;
-      }
-
+      // Don't update locally - let SignalR event handler do it
       return updatedUser;
     } catch (err) {
       error.value = err.message;
@@ -94,9 +133,7 @@ export const useUsersStore = defineStore('users', () => {
 
     try {
       await deleteUser(id);
-
-      // Remove from local state
-      users.value = users.value.filter(u => u.id !== id);
+      // Don't remove locally - let SignalR event handler do it
     } catch (err) {
       error.value = err.message;
       throw err;
@@ -112,6 +149,7 @@ export const useUsersStore = defineStore('users', () => {
     loadUsers,
     addUser,
     modifyUser,
-    removeUser
+    removeUser,
+    cleanup
   };
 });
