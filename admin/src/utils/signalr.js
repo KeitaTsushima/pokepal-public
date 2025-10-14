@@ -62,3 +62,27 @@ export function onDeviceUpdated(callback) {
 
   connection.on('deviceUpdated', callback);
 }
+
+/**
+ * Listen to userUpdated events
+ */
+export function onUserUpdated(callback) {
+  if (!connection) {
+    console.warn('[SignalR] Not connected');
+    return;
+  }
+
+  connection.on('userUpdated', callback);
+}
+
+/**
+ * Listen to userDeleted events
+ */
+export function onUserDeleted(callback) {
+  if (!connection) {
+    console.warn('[SignalR] Not connected');
+    return;
+  }
+
+  connection.on('userDeleted', callback);
+}
