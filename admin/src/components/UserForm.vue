@@ -1,6 +1,17 @@
 <template>
   <form @submit.prevent="handleSubmit" class="user-form">
-    <!-- Name (Required) -->
+    <!-- User ID (Read-only, shown only in edit mode) -->
+    <div v-if="isEditMode" class="form-group">
+      <label for="userId">ユーザーID</label>
+      <input
+        id="userId"
+        :value="props.user.id"
+        type="text"
+        disabled
+      />
+    </div>
+
+    <!-- Name (Required, Read-only in Edit Mode) -->
     <div class="form-group">
       <label for="name" class="required">氏名</label>
       <input
@@ -9,6 +20,7 @@
         type="text"
         placeholder="山田 太郎"
         required
+        :disabled="isEditMode"
         :class="{ 'error': errors.name }"
       />
       <span v-if="errors.name" class="error-message">{{ errors.name }}</span>
@@ -36,7 +48,7 @@
       />
     </div>
 
-    <!-- Device ID (Required) -->
+    <!-- Device ID (Required, Read-only in Edit Mode) -->
     <div class="form-group">
       <label for="deviceId" class="required">デバイスID</label>
       <input
@@ -45,6 +57,7 @@
         type="text"
         placeholder="devicenumber99"
         required
+        :disabled="isEditMode"
         :class="{ 'error': errors.deviceId }"
       />
       <span v-if="errors.deviceId" class="error-message">{{ errors.deviceId }}</span>
@@ -227,6 +240,14 @@ select.error {
   margin-top: 0.25rem;
   font-size: 0.875rem;
   color: #ef4444;
+}
+
+/* Disabled input styling */
+input:disabled,
+textarea:disabled {
+  background-color: #f3f4f6;
+  color: #6b7280;
+  cursor: not-allowed;
 }
 
 textarea {
