@@ -51,8 +51,8 @@ def list_users(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     try:
-        # Query all users
-        query = "SELECT * FROM c"
+        # Query all active users (soft delete: filter out isActive = false)
+        query = "SELECT * FROM c WHERE c.isActive = true"
         items = list(users_container.query_items(
             query=query,
             enable_cross_partition_query=True
@@ -162,8 +162,9 @@ def create_user(req: func.HttpRequest, signalRMessages: func.Out[str]) -> func.H
                 status_code=400
             )
 
-    # Add timestamp
+    # Add timestamp and active status
     req_body["createdAt"] = datetime.now(timezone.utc).isoformat()
+    req_body["isActive"] = True
 
     # Set defaults for optional fields
     if "roomNumber" not in req_body:
@@ -253,13 +254,17 @@ def update_user(req: func.HttpRequest, signalRMessages: func.Out[str]) -> func.H
         # Read existing user
         existing_user = users_container.read_item(item=user_id, partition_key=user_id)
 
-        # Update fields (preserve id and createdAt)
-        req_body["id"] = user_id
-        req_body["createdAt"] = existing_user.get("createdAt")
-        req_body["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        # Merge update with existing data (partial update)
+        # This preserves fields not included in the request (e.g., proactiveTasks)
+        # Protected fields: id, createdAt, deviceId, name, isActive
+        for key, value in req_body.items():
+            if key not in ["id", "createdAt", "deviceId", "name", "isActive"]:
+                existing_user[key] = value
+
+        existing_user["updatedAt"] = datetime.now(timezone.utc).isoformat()
 
         # Replace user in Cosmos DB
-        updated_user = users_container.replace_item(item=user_id, body=req_body)
+        updated_user = users_container.replace_item(item=user_id, body=existing_user)
         logger.info("User updated: %s", user_id)
 
         # Send SignalR notification
@@ -298,13 +303,13 @@ def update_user(req: func.HttpRequest, signalRMessages: func.Out[str]) -> func.H
     connection="AzureSignalRConnectionString"
 )
 def delete_user(req: func.HttpRequest, signalRMessages: func.Out[str]) -> func.HttpResponse:
-    """Delete a user.
+    """Soft delete a user (set isActive to false).
 
     Args:
         id: User ID from route parameter
 
     Returns:
-        JSON response confirming deletion
+        JSON response confirming soft deletion
     """
     if not users_container:
         return func.HttpResponse(
@@ -322,9 +327,16 @@ def delete_user(req: func.HttpRequest, signalRMessages: func.Out[str]) -> func.H
         )
 
     try:
-        # Delete user from Cosmos DB
-        users_container.delete_item(item=user_id, partition_key=user_id)
-        logger.info("User deleted: %s", user_id)
+        # Read existing user
+        existing_user = users_container.read_item(item=user_id, partition_key=user_id)
+
+        # Soft delete: set isActive to false
+        existing_user["isActive"] = False
+        existing_user["deletedAt"] = datetime.now(timezone.utc).isoformat()
+
+        # Update user in Cosmos DB
+        updated_user = users_container.replace_item(item=user_id, body=existing_user)
+        logger.info("User soft deleted: %s", user_id)
 
         # Send SignalR notification
         signalr_message = {
