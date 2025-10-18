@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pokepalプロジェクト 中間報告</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+            font-size: 30pt;
+        }
+
+        .slide-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .slide {
+            display: none;
+            width: 90%;
+            max-width: 1200px;
+            height: 90%;
+            padding: 60px;
+            background: rgb(20, 35, 90);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow-y: auto;
+        }
+
+        .slide.active {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+
+        .slide.title-slide.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1 {
+            font-size: 30pt;
+            margin-bottom: 30px;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        h2 {
+            font-size: 30pt;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #fff;
+            padding-bottom: 10px;
+        }
+
+        h3 {
+            font-size: 30pt;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+
+        h4 {
+            font-size: 30pt;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #ffb366;
+        }
+
+        p {
+            font-size: 30pt;
+            line-height: 1.8;
+            margin-bottom: 10px;
+        }
+
+        li {
+            font-size: 30pt;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        ul {
+            margin-left: 30px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            font-size: 30pt;
+            table-layout: fixed;
+        }
+
+        th, td {
+            padding: 8px;
+            text-align: center;
+            border: 2px solid rgba(255,255,255,0.3);
+            font-size: 30pt;
+        }
+
+        th {
+            background: rgba(255,255,255,0.2);
+            font-weight: normal;
+        }
+
+        thead tr:first-child th {
+            border-left: none;
+        }
+
+        thead tr:first-child th:first-child {
+            border-left: 2px solid rgba(255,255,255,0.3);
+        }
+
+        thead tr:first-child th:nth-child(3) {
+            border-right: none;
+        }
+
+        .center {
+            text-align: center;
+            font-size: 30pt;
+            margin: 20px 0;
+        }
+
+        .navigation {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            font-size: 0.8em;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .progress {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 5px;
+            background: #ffd700;
+            transition: width 0.3s;
+        }
+
+        pre {
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 30pt;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        strong {
+            color: #ffb366;
+            font-weight: bold;
+        }
+
+        .subtitle {
+            text-align: center;
+            font-size: 30pt;
+            margin-bottom: 50px;
+            color: rgba(255,255,255,0.8);
+        }
+
+        .highlight-cell {
+            background-color: rgba(255, 255, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="progress" id="progress"></div>
+
+    <div class="slide-container">
+        <!-- タイトル -->
+        <div class="slide title-slide active">
+            <h1>Pokepalプロジェクト<br>中間報告</h1>
+        </div>
+
+        <!-- 自己紹介と参加背景 -->
+        <div class="slide">
+            <h2>自己紹介と参加の背景</h2>
+            <p>對馬啓太（つしまけいた）と申します。営業やコンサルをしています。</p>
+            <ul>
+                <li>データ操作や簡易な処理のプログラムは経験があったが、プロダクトの全体を構築してみたかった</li>
+                <li>コンサルよりも自分で事業をする方が楽しいので、自分のプロダクト（ポートフォリオ）を作りたいと思っていた</li>
+                <li>少しずつトライしていたところ、たまたま春先にこのブートキャンプのことを知ったので参加を決めた</li>
+            </ul>
+        </div>
+
+        <!-- 今回のゴール (1/2) -->
+        <div class="slide">
+            <h2>今回のゴール</h2>
+            <p>フロントエンドからバックエンドまで含めたプロダクトを、IoTやクラウドサービスも使いつつ作ってみたい：</p>
+            <ul>
+                <li><strong>エッジデバイス（Raspberry Pi、Jetson）で音声対話</strong>：通常の会話＋できれば画像もとりたい</li>
+                <li><strong>クラウド（Azure）で会話を記憶＆タスクリマインド</strong>：パーソナライズされた対話やプロアクティブな声かけ</li>
+                <li><strong>Web管理画面で中央管理</strong>：複数デバイスの状態確認、ユーザー情報管理、タスクの登録やリマインド設定</li>
+            </ul>
+        </div>
+
+        <!-- 今回のゴール (2/2) -->
+        <div class="slide">
+            <h2>今回のゴール</h2>
+            <ul>
+                <li><strong>リアルタイム連動</strong>：デバイス⇔クラウド⇔管理画面が常に同期し、設定変更がすぐに反映される</li>
+                <li><strong>iPhoneアプリでも管理画面</strong>：スマホからも確認・操作できるようにする</li>
+                <li><strong>CI/CD環境（Azure DevOps）の構築</strong>：コードをプッシュするだけで自動ビルド・デプロイされ、現場のデバイスに即座に反映される</li>
+            </ul>
+        </div>
+
+        <!-- 当初想定 -->
+        <div class="slide">
+            <h2>ターゲットと問題 - 当初想定</h2>
+            <ul>
+                <li><strong>最初は自分向け</strong>：1日10件のmtgが入る日などもあり、即興で喋ることも多いので自分が何を喋ったかすぐ忘れてしまう→Mac上で動くプログラムを書いた</li>
+                <li><strong>次は高齢者向け</strong>：今回参加するにあたり、昔よく仕事をしていたヘルスケア関連、特に介護施設向けにアレンジできないか？</li>
+                <li><strong>介護施設の問題</strong>：高齢者と同じ会話を繰り返ししたり、アナウンス（食事の時間です）や確認（薬は飲みましたか）に時間がかかるという問題を和らげられるのではないか？</li>
+            </ul>
+        </div>
+
+        <!-- インタビュー前のターゲット区分 -->
+        <div class="slide">
+            <h2>ターゲット区分（インタビュー前）</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th rowspan="3"></th>
+                        <th>← 低</th>
+                        <th colspan="2">介護必要度</th>
+                        <th>高 →</th>
+                    </tr>
+                    <tr>
+                        <th colspan="2"><small>自費系</small></th>
+                        <th colspan="2"><small>介護保険系</small></th>
+                    </tr>
+                    <tr>
+                        <th>サ高住</th>
+                        <th>有料老人ホーム</th>
+                        <th>老健施設</th>
+                        <th>特養施設</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>事業者（施設）</strong></td>
+                        <td></td>
+                        <td></td>
+                        <td>○</td>
+                        <td>◎</td>
+                    </tr>
+                    <tr>
+                        <td><strong>入居者（高齢者）</strong></td>
+                        <td></td>
+                        <td>△</td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- インタビュー後のターゲット区分 -->
+        <div class="slide">
+            <h2>ターゲット区分（インタビュー後）</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th rowspan="3"></th>
+                        <th>← 高</th>
+                        <th colspan="2">認知機能</th>
+                        <th>低 →</th>
+                    </tr>
+                    <tr>
+                        <th colspan="2"><small>自費系</small></th>
+                        <th colspan="2"><small>介護保険系</small></th>
+                    </tr>
+                    <tr>
+                        <th>サ高住</th>
+                        <th>有料老人ホーム</th>
+                        <th>老健施設</th>
+                        <th>特養施設</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>事業者（施設）</strong></td>
+                        <td></td>
+                        <td></td>
+                        <td>△</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td><strong>入居者（高齢者）</strong></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td><strong>家族</strong></td>
+                        <td class="highlight-cell">◎</td>
+                        <td class="highlight-cell">◎</td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- プロダクト検討のポイント -->
+        <div class="slide">
+            <h2>プロダクト検討のポイント</h2>
+            <ul>
+                <li><strong>高齢者の状態</strong>：認知機能が低下するとそもそも会話もできないので利用が難しい。認知機能がやや低下してきた方々であれば使うイメージが湧きやすい</li>
+                <li><strong>家族</strong>：親が心配で、無断で監視カメラを設置する方々がいるくらいなので、家族が買うニーズのほうが明確</li>
+                <li><strong>施設スタッフ</strong>：老健施設や特養施設では転倒防止が重要。起き上がりを検知して正しく通知してくれるなら嬉しい</li>
+                <li><strong>事業者（施設経営者）</strong>：見回りなどの手間が減る（費用対効果がある）のであれば検討は可能</li>
+            </ul>
+        </div>
+
+        <!-- プロダクトの方向性 -->
+        <div class="slide">
+            <h2>プロダクトの方向性</h2>
+            <ul>
+                <li><strong>会話デバイス</strong>：当初に考えていた会話やリマインドなどの機能を、個別の家族に使っていただく。親が大丈夫かどうかや、きちんと会話応答しているか、薬を飲んだかどうか、子どもはスマホから確認できる</li>
+                <li><strong>見守りデバイス</strong>：既存の起き上がり検知（圧力センサーが入ったマット）は精度がイマイチなので、目（カメラ映像）と声を組み合わせて確認することができれば役に立つかもしれない</li>
+            </ul>
+        </div>
+
+        <!-- システムフロー -->
+        <div class="slide">
+            <h2>システムフロー概要</h2>
+            <div class="center">
+                <p>【デモ動画を挿入予定】</p>
+            </div>
+            <pre>
+デバイスに話しかける ↔︎ 応答がある
+　　　　　　　 ↑↓
+　　　　　 DBに記録される
+　　　　　　　　 ↑↓
+ブラウザで確認 ↔︎ ブラウザからの追加や変更を登録
+            </pre>
+        </div>
+
+        <!-- 今後の展望 -->
+        <div class="slide">
+            <h2>今後の展望</h2>
+            <ul>
+                <li><strong>11月</strong>：Vueによる管理画面制作を進め、iPhoneアプリでの実装にもトライ。状況により顧客インタビュー実施</li>
+                <li><strong>11月下旬</strong>：Reachy miniが届き次第、本プログラムを移植し、動作確認</li>
+                <li><strong>【年内目標】</strong>：デバイスやロボットが個別の会話（眼を含む）を実施しており、管理画面で中央監視ができ、スマホアプリでスタッフが状況確認できる、という装置が一旦完成している状態</li>
+            </ul>
+        </div>
+
+        <!-- 終わり -->
+        <div class="slide title-slide">
+            <h1>ありがとうございました</h1>
+        </div>
+    </div>
+
+    <div class="navigation">
+        <span id="slideNumber">1</span> / <span id="totalSlides">12</span>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        const progress = document.getElementById('progress');
+        const slideNumber = document.getElementById('slideNumber');
+        document.getElementById('totalSlides').textContent = totalSlides;
+
+        function showSlide(n) {
+            slides[currentSlide].classList.remove('active');
+            currentSlide = (n + totalSlides) % totalSlides;
+            slides[currentSlide].classList.add('active');
+            progress.style.width = ((currentSlide + 1) / totalSlides * 100) + '%';
+            slideNumber.textContent = currentSlide + 1;
+        }
+
+        function nextSlide() {
+            showSlide(currentSlide + 1);
+        }
+
+        function prevSlide() {
+            showSlide(currentSlide - 1);
+        }
+
+        // キーボード操作
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                nextSlide();
+            } else if (e.key === 'ArrowLeft') {
+                prevSlide();
+            }
+        });
+
+        // クリック操作（無効化）
+        // document.querySelector('.slide-container').addEventListener('click', (e) => {
+        //     if (e.clientX > window.innerWidth / 2) {
+        //         nextSlide();
+        //     } else {
+        //         prevSlide();
+        //     }
+        // });
+
+        // 初期表示
+        progress.style.width = (1 / totalSlides * 100) + '%';
+    </script>
+</body>
+</html>
