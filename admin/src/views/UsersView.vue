@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useUsersStore } from '../stores/users';
+import { useToastStore } from '../stores/toast';
 import UserForm from '../components/UserForm.vue';
 
 const usersStore = useUsersStore();
+const toastStore = useToastStore();
 const showModal = ref(false);
 const editingUser = ref(null);
 const showDeleteDialog = ref(false);
@@ -43,15 +45,18 @@ async function handleUserSubmit(userData) {
     if (editingUser.value) {
       // Update existing user
       await usersStore.modifyUser(editingUser.value.id, userData);
+      toastStore.showSuccess('利用者を更新しました');
     } else {
       // Create new user
       const userId = `user_${Date.now()}`;
       const newUser = { id: userId, ...userData };
       await usersStore.addUser(newUser);
+      toastStore.showSuccess('利用者を登録しました');
     }
     closeModal();
   } catch (error) {
     console.error('Failed to save user:', error);
+    toastStore.showError('保存に失敗しました');
   }
 }
 
@@ -73,10 +78,12 @@ async function executeDelete() {
 
   try {
     await usersStore.removeUser(deletingUser.value.id);
+    toastStore.showSuccess('利用者を削除しました');
     showDeleteDialog.value = false;
     deletingUser.value = null;
   } catch (error) {
     console.error('Failed to delete user:', error);
+    toastStore.showError('削除に失敗しました');
   }
 }
 </script>
@@ -110,7 +117,12 @@ async function executeDelete() {
             <p>呼び方: {{ user.nickname }}</p>
             <p v-if="user.roomNumber">部屋番号: {{ user.roomNumber }}</p>
             <p>デバイスID: {{ user.deviceId }}</p>
-            <p>本日の予定: <span class="proactive-tasks-link">{{ user.proactiveTasks?.length || 0 }}件</span></p>
+            <p>
+              本日の予定:
+              <router-link :to="`/users/${user.id}/tasks`" class="proactive-tasks-link">
+                {{ user.proactiveTasks?.length || 0 }}件
+              </router-link>
+            </p>
             <p v-if="user.notes" class="notes">{{ user.notes }}</p>
           </div>
           <div class="user-actions">
