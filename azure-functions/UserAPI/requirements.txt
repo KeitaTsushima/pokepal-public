@@ -1,2 +1,3 @@
 azure-functions
 azure-cosmos
+azure-iot-hub
