@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import azure.functions as func
 from azure.cosmos import CosmosClient, exceptions
 from azure.core.exceptions import AzureError
+from azure.iot.hub import IoTHubRegistryManager
 
 # Logging configuration
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +34,82 @@ if cosmos_connection:
         logger.error("Unexpected error initializing Cosmos DB: %s", e)
 else:
     logger.warning("CosmosDBConnection not configured - running without database")
+
+# Initialize IoT Hub connection
+iot_connection = os.environ.get("IoTHubConnectionString")
+iot_registry_manager = None
+
+if iot_connection:
+    try:
+        iot_registry_manager = IoTHubRegistryManager(iot_connection)
+        logger.info("IoT Hub Registry Manager initialized successfully")
+    except Exception as e:
+        logger.error("Failed to initialize IoT Hub: %s", e)
+else:
+    logger.warning("IoTHubConnectionString not configured")
+
+
+def transform_tasks_for_device(tasks, user_name):
+    """Transform proactiveTasks from Cosmos DB format to Module Twin format.
+
+    Args:
+        tasks: List of tasks from user.proactiveTasks
+        user_name: User's name for message generation
+
+    Returns:
+        List of transformed tasks for device
+    """
+    transformed = []
+    for task in tasks:
+        transformed.append({
+            "id": task.get("id"),
+            "scope": "personal",
+            "type": "reminder",
+            "name": task.get("title"),
+            "message": f"{user_name}さん、{task.get('title')}の時間です",
+            "time": task.get("time"),
+            "enabled": task.get("enabled", True)
+        })
+    return transformed
+
+
+def update_module_twin(device_id, tasks):
+    """Update Module Twin with proactive tasks.
+
+    Args:
+        device_id: IoT device ID
+        tasks: Transformed tasks list
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not iot_registry_manager:
+        logger.warning("IoT Hub not configured, skipping Module Twin update")
+        return False
+
+    try:
+        module_id = "voice-conversation"
+
+        # Get current twin
+        twin = iot_registry_manager.get_module_twin(device_id, module_id)
+
+        # Update desired properties
+        twin_patch = {
+            "properties": {
+                "desired": {
+                    "proactiveTasks": tasks
+                }
+            }
+        }
+
+        # Apply update
+        iot_registry_manager.update_module_twin(device_id, module_id, twin_patch, twin.etag)
+        logger.info("Module Twin updated for device: %s", device_id)
+        return True
+
+    except Exception as e:
+        logger.error("Failed to update Module Twin for device %s: %s", device_id, e)
+        return False
 
 
 @app.route(route="users", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
@@ -266,6 +343,12 @@ def update_user(req: func.HttpRequest, signalRMessages: func.Out[str]) -> func.H
         # Replace user in Cosmos DB
         updated_user = users_container.replace_item(item=user_id, body=existing_user)
         logger.info("User updated: %s", user_id)
+
+        # Sync to Module Twin if proactiveTasks were updated
+        if "proactiveTasks" in req_body and updated_user.get("deviceId"):
+            tasks = req_body.get("proactiveTasks", [])
+            transformed_tasks = transform_tasks_for_device(tasks, updated_user.get("name"))
+            update_module_twin(updated_user.get("deviceId"), transformed_tasks)
 
         # Send SignalR notification
         signalr_message = {
