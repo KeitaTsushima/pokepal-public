@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUsersStore } from '../stores/users';
 import { useToastStore } from '../stores/toast';
@@ -13,8 +13,11 @@ const toastStore = useToastStore();
 // Get user ID from URL parameter
 const userId = route.params.id;
 
-// User data
-const user = ref(null);
+// User data - computed to react to store changes (SignalR updates)
+const user = computed(() => {
+  return usersStore.users.find(u => u.id === userId);
+});
+
 const loading = ref(true);
 
 // Modal state
@@ -23,13 +26,13 @@ const editingTask = ref(null);
 
 // Load user data on mount
 onMounted(async () => {
-  await loadUser();
+  await loadUsers();
 });
 
 /**
- * Load user data from store
+ * Load users data from store
  */
-async function loadUser() {
+async function loadUsers() {
   loading.value = true;
 
   try {
@@ -38,15 +41,12 @@ async function loadUser() {
       await usersStore.loadUsers();
     }
 
-    // Find user by ID
-    user.value = usersStore.users.find(u => u.id === userId);
-
     if (!user.value) {
       toastStore.showError('利用者が見つかりません');
       router.push('/users');
     }
   } catch (error) {
-    console.error('Failed to load user:', error);
+    console.error('Failed to load users:', error);
     toastStore.showError('利用者情報の取得に失敗しました');
   } finally {
     loading.value = false;
@@ -72,7 +72,7 @@ function addTask() {
  * Edit task
  */
 function editTask(task) {
-  editingTask.value = task;
+  editingTask.value = JSON.parse(JSON.stringify(task));
   showModal.value = true;
 }
 
@@ -89,7 +89,7 @@ function closeModal() {
  */
 async function handleTaskSubmit(taskData) {
   try {
-    const tasks = user.value.proactiveTasks || [];
+    const tasks = JSON.parse(JSON.stringify(user.value.proactiveTasks || []));
 
     if (editingTask.value) {
       // Update existing task
@@ -114,8 +114,7 @@ async function handleTaskSubmit(taskData) {
     toastStore.showSuccess(editingTask.value ? 'タスクを更新しました' : 'タスクを追加しました');
     closeModal();
 
-    // Reload user data
-    await loadUser();
+    // No need to reload - computed property will auto-update via SignalR
   } catch (error) {
     console.error('Failed to save task:', error);
     toastStore.showError('タスクの保存に失敗しました');
@@ -123,11 +122,30 @@ async function handleTaskSubmit(taskData) {
 }
 
 /**
- * Delete task (placeholder)
+ * Delete task
  */
-function deleteTask(task) {
-  // TODO: Show confirmation dialog and delete
-  console.log('Delete task:', task);
+async function deleteTask(task) {
+  // Show confirmation dialog
+  const confirmed = confirm(`「${task.title}」を削除しますか？`);
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    // Remove task from array (deep copy to avoid mutation)
+    const tasks = JSON.parse(JSON.stringify(user.value.proactiveTasks || []));
+    const updatedTasks = tasks.filter(t => t.id !== task.id);
+
+    // Update user via API
+    await usersStore.modifyUser(userId, {
+      proactiveTasks: updatedTasks
+    });
+
+    toastStore.showSuccess('タスクを削除しました');
+  } catch (error) {
+    console.error('Failed to delete task:', error);
+    toastStore.showError('タスクの削除に失敗しました');
+  }
 }
 </script>
 
