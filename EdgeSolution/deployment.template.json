@@ -10,10 +10,10 @@
             "minDockerVersion": "v1.25",
             "loggingOptions": "",
             "registryCredentials": {
-              "myregistrycred": {
-                "address": "myregistry.azurecr.io",
-                "username": "${ACR_USERNAME}",
-                "password": "${ACR_PASSWORD}"
+              "pokepalacrcred": {
+                "address": "pokepalregistry.azurecr.io",
+                "username": "pokepalregistry",
+                "password": "${pokepal-acr-password}"
               }
             }
           }
@@ -99,10 +99,10 @@
                   "GroupAdd": ["audio"],
                   "Binds": [
                     "/dev/snd:/dev/snd",
-                    "/var/log/appdata:/var/log/appdata",
-                    "/var/log/appdata/memories:/app/memories",
-                    "/var/log/appdata/config:/var/log/appdata/config",
-                    "/etc/iotedge/kvcerts/app-kv.pem:/app-kv.pem:ro"
+                    "/var/log/pokepal:/var/log/pokepal",
+                    "/var/log/pokepal/memories:/app/memories",
+                    "/var/log/pokepal/config:/var/log/pokepal/config",
+                    "/etc/iotedge/kvcerts/pokepal-kv.pem:/pokepal-kv.pem:ro"
                   ],
                   "User": "0:0",
                   "NanoCpus": 400000000,
@@ -125,7 +125,7 @@
             },
             "env": {
               "AUDIO_DEVICE": {
-                "value": "plughw:2,0"
+                "value": "plughw:0,0"
               },
               "PLAYBACK_DEVICE": {
                 "value": "plughw:0,0"
@@ -134,13 +134,16 @@
                 "value": "plughw:3,0"
               },
               "LOG_DIR": {
-                "value": "/var/log/appdata"
+                "value": "/var/log/pokepal"
               },
               "MEMORY_DIR": {
                 "value": "/app/memories"
               },
               "ENABLE_PROACTIVE_FEATURES": {
                 "value": "true"
+              },
+              "USER_API_URL": {
+                "value": "${USER_API_URL}"
               },
               "KEY_VAULT_URL": {
                 "value": "${KEY_VAULT_URL}"
@@ -152,7 +155,7 @@
                 "value": "${AZURE_CLIENT_ID}"
               },
               "AZURE_CLIENT_CERTIFICATE_PATH": {
-                "value": "/app-kv.pem"
+                "value": "/pokepal-kv.pem"
               },
               "AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT": {
                 "value": "${AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT}"
