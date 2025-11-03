@@ -36,6 +36,7 @@ from infrastructure.iot.connection_manager import IoTConnectionManager
 from infrastructure.memory.memory_repository import MemoryRepository
 from infrastructure.ai.async_openai_shared import cleanup_shared_openai, get_shared_openai
 from infrastructure.security.async_key_vault import cleanup_async_key_vault, get_async_key_vault
+from infrastructure.api.user_api_client import UserAPIClient
 
 logging.basicConfig(
     level=logging.DEBUG if os.environ.get('DEBUG') else logging.INFO,
@@ -156,13 +157,24 @@ class Application:
         
         # 4. Create Domain configuration
         conversation_config = ConversationConfig(self.config_loader)
-        
+
+        # Initialize UserAPIClient for voice-based task creation
+        user_api_url = os.environ.get('USER_API_URL')
+        device_id = os.environ.get('IOTEDGE_DEVICEID')
+        user_api_client = None
+        if user_api_url and device_id:
+            user_api_client = UserAPIClient(base_url=user_api_url, user_id=device_id)
+            logger.info("UserAPIClient initialized with device_id: %s", device_id)
+        else:
+            logger.warning("USER_API_URL or device_id not configured, voice-based task creation disabled")
+
         # 5. Build Application layer
         conversation_service = ConversationService(
             config=conversation_config,
             ai_client=llm_client,
             memory_repository=self.memory_repository,
             telemetry_adapter=telemetry_sender,
+            user_api_client=user_api_client,
             clause_break_threshold=self.config_loader.get('tts.streaming.clause_break_threshold')
         )
         
@@ -200,16 +212,20 @@ class Application:
             self.config_loader,
             services={
                 'conversation_service': conversation_service,
-                'memory_manager': self.memory_repository
+                'memory_manager': self.memory_repository,
+                'proactive_service': self.proactive_service
             },
             iot_client=iot_connection_manager.get_client()
         )
-        
-        iot_commands.register_update_callback('memory_update', 
+
+        iot_commands.register_update_callback('memory_update',
             lambda update: self.twin_sync.receive_memory_summary(update))
-        
+
         iot_commands.register_update_callback('conversation_restore',
             lambda recovery_data: conversation_service.recover_conversations(recovery_data))
+
+        iot_commands.register_update_callback('proactiveTasks',
+            lambda tasks: self.proactive_service.reload_tasks())
         
         # 6. Setup signal handlers
         self.signal_handler = SignalHandler()
