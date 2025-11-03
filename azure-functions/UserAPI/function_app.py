@@ -197,6 +197,63 @@ def get_user_by_id(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 
+@app.route(route="users/by-device/{deviceId}", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def get_user_by_device_id(req: func.HttpRequest) -> func.HttpResponse:
+    """Get a specific user by device ID.
+
+    Args:
+        deviceId: Device ID from route parameter
+
+    Returns:
+        JSON response with user data
+    """
+    if not users_container:
+        return func.HttpResponse(
+            json.dumps({"error": "Database not available"}),
+            mimetype="application/json",
+            status_code=503
+        )
+
+    device_id = req.route_params.get('deviceId')
+    if not device_id:
+        return func.HttpResponse(
+            json.dumps({"error": "Device ID is required"}),
+            mimetype="application/json",
+            status_code=400
+        )
+
+    try:
+        # Query user by deviceId
+        query = f"SELECT * FROM c WHERE c.deviceId = @deviceId AND c.isActive = true"
+        parameters = [{"name": "@deviceId", "value": device_id}]
+        items = list(users_container.query_items(
+            query=query,
+            parameters=parameters,
+            enable_cross_partition_query=True
+        ))
+
+        if not items:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                mimetype="application/json",
+                status_code=404
+            )
+
+        # Return first matching user
+        return func.HttpResponse(
+            json.dumps(items[0]),
+            mimetype="application/json",
+            status_code=200
+        )
+    except Exception as e:
+        logger.error("Failed to get user by device ID %s: %s", device_id, e)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to retrieve user"}),
+            mimetype="application/json",
+            status_code=500
+        )
+
+
 @app.route(route="users", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 @app.generic_output_binding(
     arg_name="signalRMessages",
