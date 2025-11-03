@@ -332,6 +332,7 @@ jobs:
       CERT_PATH: /YOUR-KV-CERT.pem
       OPENAI_SECRET_NAME: openai-api-key
       AZURE_SPEECH_SECRET_NAME: azure-speech-key
+      USER_API_URL: $(USER_API_URL)
     inputs:
       targetType: 'inline'
       script: |
@@ -360,6 +361,7 @@ jobs:
         echo "AZURE_TENANT_ID: ${AZURE_TENANT_ID:-NOT_SET}"
         echo "AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-NOT_SET}"
         echo "AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT: ${AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT:-NOT_SET}"
+        echo "USER_API_URL: ${USER_API_URL:-NOT_SET}"
         echo "ACR_USERNAME: ${ACR_USERNAME:-NOT_SET}"
         echo "ACR_PASSWORD: $([ -n "${ACR_PASSWORD:-}" ] && echo "SET" || echo "NOT_SET")"
         
@@ -393,6 +395,7 @@ jobs:
           --arg imds "$AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT" \
           --arg oname "$OPENAI_SECRET_NAME" \
           --arg sname "$AZURE_SPEECH_SECRET_NAME" \
+          --arg user_api_url "$USER_API_URL" \
           '
           # Replace ACR registry credentials
           .modulesContent."$edgeAgent"."properties.desired".runtime.settings.registryCredentials.YOUR_ACR_CRED.username = $acr_user |
@@ -409,7 +412,8 @@ jobs:
           .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.AZURE_CLIENT_CERTIFICATE_PATH.value = $cert |
           .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.AZURE_IDENTITY_DISABLE_IMDS_ENDPOINT.value = $imds |
           .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.OPENAI_SECRET_NAME.value = $oname |
-          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.AZURE_SPEECH_SECRET_NAME.value = $sname
+          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.AZURE_SPEECH_SECRET_NAME.value = $sname |
+          .modulesContent."$edgeAgent"."properties.desired".modules."voice-conversation".env.USER_API_URL.value = $user_api_url
           ' "$SOURCE_MANIFEST" > "$tmp_manifest" && mv "$tmp_manifest" "$FINAL_MANIFEST"
         
         # Convert createOptions to JSON strings (IoT Hub API requirement)
