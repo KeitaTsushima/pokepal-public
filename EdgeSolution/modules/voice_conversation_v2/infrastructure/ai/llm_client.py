@@ -52,46 +52,74 @@ class LLMClient:
             self.logger.error("Response generation error: %s", e)
             return None
     
-    async def stream_chat_completion(self, messages: List[Message], system_prompt: str):
+    async def stream_chat_completion(self, messages: List[Message], system_prompt: str, tools: Optional[List[Dict[str, Any]]] = None):
         try:
             api_messages = self._convert_to_api_format(messages, system_prompt)
             final_buf = []
-            
+
             # Get current configuration dynamically
             model = self.config_loader.get('llm.model')
             max_tokens = self.config_loader.get('llm.max_tokens')
             temperature = self.config_loader.get('llm.temperature')
-            
+
             # Get shared OpenAI client with semaphore control
             shared_openai = await get_shared_openai()
             client = await shared_openai.get_llm_client(self.openai_secret_name)
-            
-            stream = await client.chat.completions.create(
-                model=model,
-                messages=api_messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                stream=True,
-                stream_options={"include_usage": True}  # Add usage stats for debugging
-            )
+
+            # Prepare parameters for API call
+            params = {
+                "model": model,
+                "messages": api_messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "stream": True,
+                "stream_options": {"include_usage": True}  # Add usage stats for debugging
+            }
+
+            # Add tools if provided (for Function Calling)
+            if tools:
+                params["tools"] = tools
+
+            stream = await client.chat.completions.create(**params)
             
             chunk_count = 0
+            tool_calls = []
             async for chunk in stream:
                 chunk_count += 1
+
+                # Check for tool calls (Function Calling)
+                if chunk.choices[0].delta.tool_calls:
+                    for tool_call in chunk.choices[0].delta.tool_calls:
+                        # Accumulate tool call information
+                        if tool_call.index >= len(tool_calls):
+                            tool_calls.append({
+                                "id": tool_call.id,
+                                "function": {
+                                    "name": tool_call.function.name if tool_call.function.name else "",
+                                    "arguments": ""
+                                }
+                            })
+                        if tool_call.function.arguments:
+                            tool_calls[tool_call.index]["function"]["arguments"] += tool_call.function.arguments
+
                 try:
                     delta = chunk.choices[0].delta.content
                 except Exception:
                     delta = None
-                    
+
                 if delta:
                     final_buf.append(delta)
                     yield {"type": "delta", "text": delta}
-                    
+
         except Exception as e:
             self.logger.error("Streaming response error: %s", e)
         finally:
-            final_text = self._normalize("".join(final_buf)) if final_buf else ""
-            yield {"type": "final", "text": final_text}
+            # Return tool calls if function was called
+            if tool_calls:
+                yield {"type": "tool_calls", "tool_calls": tool_calls}
+            else:
+                final_text = self._normalize("".join(final_buf)) if final_buf else ""
+                yield {"type": "final", "text": final_text}
     
     def _normalize(self, text: Optional[str]) -> str:
         if not text:
