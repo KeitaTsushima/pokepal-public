@@ -2,6 +2,7 @@
 Conversation Service - Implements conversation-related use cases
 """
 import asyncio
+import json
 import logging
 import re
 import time
@@ -10,6 +11,32 @@ from typing import Optional, Dict, Any, List
 from domain.conversation import Conversation, ConversationConfig, MessageRole
 from .conversation_recovery import ConversationRecovery
 from .system_prompt_builder import SystemPromptBuilder
+
+
+# OpenAI Function Calling definitions for task management
+TASK_MANAGEMENT_FUNCTIONS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "create_reminder",
+            "description": "Create a reminder/task for the user. IMPORTANT: Before calling this function, you MUST confirm with the user by asking '〇〇を△△に設定します、よろしいですか？'. Only call this function after the user explicitly confirms with affirmative responses like 'はい', 'いいよ', 'お願い', etc. Do NOT call this function on the initial request - always ask for confirmation first.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Title of the reminder (e.g., 薬を飲む, 会議, 散歩)"
+                    },
+                    "time": {
+                        "type": "string",
+                        "description": "Time in HH:MM format (24-hour, e.g., 08:00, 15:30)"
+                    }
+                },
+                "required": ["title", "time"]
+            }
+        }
+    }
+]
 
 
 class ConversationService:
@@ -21,6 +48,7 @@ class ConversationService:
                  ai_client = None,
                  memory_repository = None,
                  telemetry_adapter = None,
+                 user_api_client = None,
                  clause_break_threshold: int = 30) -> None:
         """
         Args:
@@ -29,21 +57,23 @@ class ConversationService:
             ai_client: AI processing client (Infrastructure layer)
             memory_repository: Memory management repository (Infrastructure layer)
             telemetry_adapter: Telemetry sending adapter (Adapters layer)
+            user_api_client: UserAPI client for task management (Infrastructure layer)
             clause_break_threshold: Threshold for clause-based streaming segmentation
         """
         self.logger = logging.getLogger(__name__)
-        
+
         # Domain object
         self.conversation = conversation or Conversation.create_new_conversation(
             user_id="default",  # TODO: Set actual user ID
             # TODO: Device sharing support - determine user_id via voice recognition/IC card/manual selection after user_id identification feature implementation
             config=config
         )
-        
+
         # Dependency components (injected later)
         self.ai_client = ai_client
         self.memory_repository = memory_repository
         self.telemetry_adapter = telemetry_adapter
+        self.user_api_client = user_api_client
         
         # Recovery and prompt building services
         self.recovery_service = ConversationRecovery(self.conversation)
@@ -116,11 +146,12 @@ class ConversationService:
         system_prompt = self.prompt_builder.build_system_prompt()
         t4 = time.monotonic()
         self.logger.debug(f"[timing] build_system_prompt: {t4-t3:.3f}s")
-        
+
         try:
-            # Create the stream generator
+            # Create the stream generator with Function Calling support
             t5 = time.monotonic()
-            stream = self.ai_client.stream_chat_completion(messages, system_prompt)
+            tools = TASK_MANAGEMENT_FUNCTIONS if self.user_api_client else None
+            stream = self.ai_client.stream_chat_completion(messages, system_prompt, tools=tools)
             t6 = time.monotonic()
             self.logger.debug(f"[timing] stream_chat_completion call: {t6-t5:.3f}s")
             
@@ -131,25 +162,63 @@ class ConversationService:
                 if t7:  # First iteration
                     self.logger.debug(f"[timing] First stream event: {time.monotonic()-t7:.3f}s")
                     t7 = None
-                if event.get("type") == "delta":
+
+                if event.get("type") == "tool_calls":
+                    # Handle Function Calling
+                    tool_calls = event["tool_calls"]
+                    self.logger.info("LLM requested function call: %s", tool_calls)
+
+                    # Execute the function
+                    for tool_call in tool_calls:
+                        function_name = tool_call["function"]["name"]
+                        arguments = json.loads(tool_call["function"]["arguments"])
+
+                        if function_name == "create_reminder" and self.user_api_client:
+                            title = arguments.get("title")
+                            time_str = arguments.get("time")
+                            self.logger.info("Creating reminder: %s at %s", title, time_str)
+
+                            # Acknowledge that we're processing
+                            acknowledgment = f"承知しました、{title}のリマインダーを設定します"
+                            yield {"type": "segment", "text": acknowledgment}
+
+                            # Execute the task creation
+                            success = await self.user_api_client.create_task(title, time_str)
+
+                            if success:
+                                response_text = f"{title}のリマインダーを{time_str}に設定しました"
+                                self.logger.info("Reminder created successfully")
+                            else:
+                                response_text = "申し訳ございません、リマインダーの設定に失敗しました"
+                                self.logger.error("Failed to create reminder")
+
+                            # Record and send the response
+                            self.conversation.add_assistant_message(response_text)
+                            self._record_and_send_utterance(MessageRole.ASSISTANT.value, response_text)
+
+                            yield {"type": "segment", "text": response_text}
+                            yield {"type": "final", "text": response_text}
+                            return
+
+                elif event.get("type") == "delta":
                     delta_text = event["text"]
                     seg_buf.append(delta_text)
                     final_buf.append(delta_text)
                     seg_char_count += len(delta_text)
-                    
+
                     has_sentence_end = delta_text and len(delta_text) > 0 and delta_text[-1] in "。！？.!?"
                     has_clause_break = delta_text and len(delta_text) > 0 and delta_text[-1] in "、,;:"
-                    
+
                     force_cut = seg_char_count >= 200  # Insurance for extremely long sentences without punctuation
                     should_cut = has_sentence_end or (has_clause_break and seg_char_count >= self.clause_break_threshold) or force_cut
-                    
+
                     if should_cut:
                         seg = re.sub(r"\s+", " ", "".join(seg_buf)).strip()
                         self.logger.debug("LLM segment: %s...", seg[:40])
                         yield {"type": "segment", "text": seg}
                         seg_buf.clear()
                         seg_char_count = 0
-                        
+
                 elif event.get("type") == "final":
                     if seg_buf:
                         tail = re.sub(r"\s+", " ", "".join(seg_buf)).strip()
