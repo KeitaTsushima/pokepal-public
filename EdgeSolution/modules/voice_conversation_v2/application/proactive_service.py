@@ -5,8 +5,11 @@ New proactive functionality implementation based on design documents.
 Supports individual customization, dynamic task management, and LLM-integrated notifications.
 Task Scheduler Service implementation following Clean Architecture.
 
-# TODO: Phase 2~3 not yet implemented (see docs/phase2/2-2-4_proactive_features_design.md)
-# Phase 2: Module Twin integration, cloud configuration sync, management UI integration
+# Implementation Status:
+# Phase 4.1 (COMPLETED): Module Twin integration - tasks synced from management UI via IoT Hub
+# Phase 4.2 (COMPLETED): Device-side task execution from Module Twin
+#
+# TODO: Phase 3 features not yet implemented (see docs/phase2/2-2-4_proactive_features_design.md)
 # Phase 3: AI condition judgment, automatic time adjustment, advanced scheduling (INTERVAL/MONTHLY/CONDITIONAL)
 """
 import asyncio
@@ -158,131 +161,72 @@ class TaskRepository(Protocol):
         ...
 
 
-class JsonTaskRepository:
-    
-    def __init__(self, config_loader, file_path: str = None):
-        # TODO: Phase 2 - Module Twin integration for cloud-based configuration sync
-        # Currently using local file storage, will integrate with IoT Hub Twin in Phase 2
-        if file_path is None:
-            file_path = config_loader.get("proactive_data.task_file", "/var/log/pokepal/config/proactive_tasks.json")
-        self._file_path = file_path
+class ModuleTwinTaskRepository:
+    """Task repository that loads tasks from Module Twin (IoT Hub)"""
+
+    def __init__(self, config_loader):
         self._config_loader = config_loader
-        self._lock = threading.Lock()
         self._logger = logging.getLogger(__name__)
-        
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(self._file_path), exist_ok=True)
-    
+
     def load_tasks(self) -> List[ScheduledTask]:
-        # Load default tasks from config
-        default_tasks = self._load_default_tasks()
-        
-        # Load custom tasks from persistent file
-        custom_tasks = []
-        if os.path.exists(self._file_path):
-            custom_tasks = self._load_custom_tasks()
-        else:
-            # Initialize with default tasks if no custom file exists
-            self._write_tasks(default_tasks)
-            return default_tasks
-        
-        # Merge default and custom tasks
-        return self._merge_tasks(default_tasks, custom_tasks)
-    
-    def _load_default_tasks(self) -> List[ScheduledTask]:
-        """Load default tasks from configuration"""
-        default_task_configs = self._config_loader.get("proactive_data.default_tasks", [])
+        """Load tasks from Module Twin via config_loader"""
+        # Get proactiveTasks from Module Twin (updated via IoT Hub)
+        proactive_tasks = self._config_loader.get("proactiveTasks", [])
+
+        if not proactive_tasks:
+            self._logger.info("No proactive tasks found in Module Twin")
+            return []
+
         tasks = []
-        
-        # Get user name for placeholder replacement
-        user_name = self._config_loader.get("llm.user_name", "")
-        
-        for task_data in default_task_configs:
+        for task_data in proactive_tasks:
             try:
-                # Deep copy to avoid modifying original config
-                task_data = task_data.copy()
-                
-                # Replace {user_name} placeholder in message
-                if "{user_name}" in task_data.get("message", ""):
-                    task_data["message"] = task_data["message"].format(user_name=user_name)
-                
-                # Convert string enums to Enum types
-                task_data['scope'] = TaskScope(task_data['scope'])
-                task_data['type'] = TaskType(task_data['type'])
-                
-                # Handle schedule pattern
-                schedule_data = task_data['schedule']
-                schedule_data['type'] = ScheduleType(schedule_data['type'])
-                task_data['schedule'] = SchedulePattern(**schedule_data)
-                
-                tasks.append(ScheduledTask(**task_data))
+                # Convert Module Twin format to ScheduledTask format
+                scheduled_task = self._convert_to_scheduled_task(task_data)
+                tasks.append(scheduled_task)
             except (ValueError, KeyError, TypeError) as e:
-                self._logger.warning(f"Skipping invalid default task: {task_data}, error: {e}")
-        
+                self._logger.warning("Skipping invalid task from Module Twin: %s, error: %s", task_data, e)
+                continue
+
+        self._logger.info("Loaded %d tasks from Module Twin", len(tasks))
         return tasks
-    
-    def _load_custom_tasks(self) -> List[ScheduledTask]:
-        """Load custom tasks from persistent file"""
-        if not os.path.exists(self._file_path):
-            return []
-        
-        try:
-            with open(self._file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                tasks = []
-                for task_data in data:
-                    try:
-                        # TODO: Improve hardcoded Enum conversion (maintainability when adding new Enum fields)
-                        # Restore Enum values
-                        task_data['scope'] = TaskScope(task_data['scope'])
-                        task_data['type'] = TaskType(task_data['type'])
-                        
-                        # Restore SchedulePattern
-                        schedule_data = task_data['schedule']
-                        schedule_data['type'] = ScheduleType(schedule_data['type'])
-                        task_data['schedule'] = SchedulePattern(**schedule_data)
-                        
-                        tasks.append(ScheduledTask(**task_data))
-                    except (ValueError, KeyError, TypeError) as e:
-                        self._logger.warning(f"Skipping invalid task data: {task_data}, error: {e}")
-                        continue
-                return tasks
-        except Exception as e:
-            self._logger.error(f"Failed to load custom tasks: {e}")
-            return []
-    
-    def _merge_tasks(self, default_tasks: List[ScheduledTask], custom_tasks: List[ScheduledTask]) -> List[ScheduledTask]:
-        """Merge default and custom tasks, with custom tasks taking precedence"""
-        # Create a dict of custom tasks by ID for quick lookup
-        custom_task_dict = {task.id: task for task in custom_tasks}
-        
-        # Start with custom tasks
-        merged_tasks = custom_tasks.copy()
-        
-        # Add default tasks that are not overridden by custom tasks
-        for default_task in default_tasks:
-            if default_task.id not in custom_task_dict:
-                merged_tasks.append(default_task)
-        
-        return merged_tasks
-    
-    def _write_tasks(self, tasks: List[ScheduledTask]) -> None:
-        """Save task list to JSON file"""
-        try:
-            # Convert dataclass to dictionary (also stringify Enums)
-            # TODO: Improve hardcoded Enum conversion (maintainability when adding new Enum fields)
-            tasks_data = []
-            for task in tasks:
-                task_dict = asdict(task)
-                task_dict['scope'] = task.scope.value
-                task_dict['type'] = task.type.value
-                task_dict['schedule']['type'] = task.schedule.type.value
-                tasks_data.append(task_dict)
-            
-            with open(self._file_path, 'w', encoding='utf-8') as f:
-                json.dump(tasks_data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            self._logger.error(f"Failed to write tasks: {e}")
+
+    def _convert_to_scheduled_task(self, task_data: dict) -> ScheduledTask:
+        """
+        Convert Module Twin task format to ScheduledTask
+
+        Module Twin format (from management UI):
+        {
+            "id": "task_123",
+            "scope": "personal",
+            "type": "reminder",
+            "name": "薬を飲む",
+            "message": "太郎さん、薬を飲むの時間です",
+            "time": "08:00",
+            "enabled": true
+        }
+        """
+        # Convert enabled → active
+        active = task_data.get("enabled", True)
+
+        # Default schedule: DAILY (most common use case for elderly care)
+        schedule = SchedulePattern(type=ScheduleType.DAILY)
+
+        # Convert scope and type strings to Enums
+        scope = TaskScope(task_data.get("scope", "personal"))
+        task_type = TaskType(task_data.get("type", "reminder"))
+
+        return ScheduledTask(
+            id=task_data["id"],
+            scope=scope,
+            type=task_type,
+            name=task_data["name"],
+            time=task_data["time"],
+            message=task_data["message"],
+            schedule=schedule,
+            device_id=task_data.get("deviceId"),  # Optional field
+            active=active,
+            created_by="module_twin"
+        )
 
 
 class TaskSchedulerService:
@@ -301,93 +245,6 @@ class TaskSchedulerService:
         self._active_tasks: List[ScheduledTask] = []
         self._running = False
     
-    def add_task(self, task_config: dict) -> str:
-        """
-        Add a new task
-        
-        Args:
-            task_config: Task configuration dictionary
-                - time: "HH:MM" format (treated as JST if no timezone specified)
-                - start_date: "YYYY-MM-DD" format (treated as JST if no timezone specified)
-                - end_date: "YYYY-MM-DD" format (treated as JST if no timezone specified)
-        
-        Returns:
-            ID of the added task
-            
-        Note:
-            Assumes use within Japan, and treats date/time without timezone info as JST.
-        """
-        if 'id' not in task_config:
-            task_config['id'] = str(uuid.uuid4())
-        
-        if isinstance(task_config.get('scope'), str):
-            task_config['scope'] = TaskScope(task_config['scope'])
-        if isinstance(task_config.get('type'), str):
-            task_config['type'] = TaskType(task_config['type'])
-        
-        if isinstance(task_config.get('schedule'), dict):
-            schedule_data = task_config['schedule'].copy()
-            if isinstance(schedule_data.get('type'), str):
-                schedule_data['type'] = ScheduleType(schedule_data['type'])
-            task_config['schedule'] = SchedulePattern(**schedule_data)
-        
-        task = ScheduledTask(**task_config)
-        if not task.validate():
-            raise ValueError("Invalid task configuration")
-            
-        tasks = self._task_repository.load_tasks()
-        updated = False
-        for i, existing_task in enumerate(tasks):
-            if existing_task.id == task.id:
-                tasks[i] = task
-                updated = True
-                break
-        
-        if not updated:
-            tasks.append(task)
-        
-        self._task_repository._write_tasks(tasks)
-        self._reload_tasks()
-        self._logger.info(f"Task added: {task.name} (scope: {task.scope.value})")
-        return task.id
-    
-    def update_task(self, task_id: str, updates: dict) -> None:
-        tasks = self._task_repository.load_tasks()
-        for task in tasks:
-            if task.id == task_id:
-                updates_converted = updates.copy()
-                
-                if 'scope' in updates_converted and isinstance(updates_converted['scope'], str):
-                    updates_converted['scope'] = TaskScope(updates_converted['scope'])
-                
-                if 'type' in updates_converted and isinstance(updates_converted['type'], str):
-                    updates_converted['type'] = TaskType(updates_converted['type'])
-                
-                if 'schedule' in updates_converted and isinstance(updates_converted['schedule'], dict):
-                    schedule_data = updates_converted['schedule'].copy()
-                    if isinstance(schedule_data.get('type'), str):
-                        schedule_data['type'] = ScheduleType(schedule_data['type'])
-                    updates_converted['schedule'] = SchedulePattern(**schedule_data)
-                
-                for key, value in updates_converted.items():
-                    if hasattr(task, key):
-                        setattr(task, key, value)
-                
-                if not task.validate():
-                    raise ValueError(f"Invalid task configuration after update: {task_id}")
-                
-                self._task_repository._write_tasks(tasks)
-                self._reload_tasks()
-                self._logger.info(f"Task updated: {task_id}")
-                return
-        raise ValueError(f"Task not found: {task_id}")
-    
-    def remove_task(self, task_id: str) -> None:
-        tasks = self._task_repository.load_tasks()
-        tasks = [task for task in tasks if task.id != task_id]
-        self._task_repository._write_tasks(tasks)
-        self._reload_tasks()
-        self._logger.info(f"Task removed: {task_id}")
     
     def get_tasks_for_time(self, current_time: datetime, 
                           task_status_today: Dict[str, TaskStatusRecord], 
@@ -895,28 +752,30 @@ class ProactiveServiceError(Exception):
 class ProactiveService:
     """
     New proactive service
-    
+
     Supports dynamic task management following Clean Architecture.
     Provides new functionality while maintaining compatibility with existing APIs.
+
+    Phase 4.2: Integrated with Module Twin for cloud-based task management.
+    Tasks are synced from management UI via IoT Hub Module Twin.
     """
-    
+
     def __init__(self, audio_output, config_loader) -> None:
         """Initialize ProactiveService with Clean Architecture compliance
-        
+
         Args:
             audio_output: Audio output adapter for TTS
             config_loader: ConfigLoader instance for dynamic configuration access
         """
         self._logger = logging.getLogger(__name__)
         self.config_loader = config_loader
-        
+
         # Data file path configuration from ConfigLoader
-        task_file = self.config_loader.get("proactive_data.task_file")
         queue_log_file = self.config_loader.get("proactive_data.queue_log_file")
-        
-        # Infrastructure layer initialization
-        self._task_repository = JsonTaskRepository(config_loader=self.config_loader, file_path=task_file)
-        
+
+        # Infrastructure layer initialization (Module Twin-based)
+        self._task_repository = ModuleTwinTaskRepository(config_loader=self.config_loader)
+
         # Application layer initialization
         self._task_scheduler_service = TaskSchedulerService(
             task_repository=self._task_repository,
@@ -924,7 +783,7 @@ class ProactiveService:
             conversation_service=None,
             config_loader=self.config_loader
         )
-        
+
         # Scheduler initialization
         self._scheduler = TaskScheduler(
             task_scheduler_service=self._task_scheduler_service,
@@ -933,9 +792,9 @@ class ProactiveService:
             queue_log_file=queue_log_file,
             max_queue_size=self.config_loader.get("proactive_data.max_queue_size")
         )
-        
-        
-        self._logger.info("ProactiveService initialized with new task scheduler")
+
+
+        self._logger.info("ProactiveService initialized with Module Twin task repository")
     
     def start(self) -> None:
         try:
@@ -956,20 +815,19 @@ class ProactiveService:
             error_msg = f"Error stopping proactive service: {e}"
             self._logger.error(error_msg)
             raise ProactiveServiceError(error_msg) from e
-    
-    def add_task(self, task_config: dict) -> str:
-        return self._task_scheduler_service.add_task(task_config)
-    
-    def update_task(self, task_id: str, updates: dict) -> None:
-        self._task_scheduler_service.update_task(task_id, updates)
-    
-    def remove_task(self, task_id: str) -> None:
-        self._task_scheduler_service.remove_task(task_id)
-    
+
+    def reload_tasks(self) -> None:
+        """Reload tasks from Module Twin (called when Module Twin is updated)"""
+        try:
+            self._task_scheduler_service._reload_tasks()
+            self._logger.info("Tasks reloaded from Module Twin")
+        except Exception as e:
+            self._logger.error("Failed to reload tasks: %s", e)
+
     def set_conversation_service(self, conversation_service) -> None:
         self._task_scheduler_service._conversation_service = conversation_service
         self._logger.info("Conversation service connected for LLM integration")
-    
+
     @property
     def is_running(self) -> bool:
         return self._scheduler.is_running
