@@ -67,7 +67,7 @@ export const useUsersStore = defineStore('users', () => {
         unregisterDeleteHandler = null
       }
 
-      unregisterUpdateHandler = onUserUpdated((updatedUser) => {
+      unregisterUpdateHandler = onUserUpdated(updatedUser => {
         console.log('[Store] Received user update:', updatedUser)
 
         const index = users.value.findIndex(u => u.id === updatedUser.id)
@@ -78,7 +78,7 @@ export const useUsersStore = defineStore('users', () => {
         }
       })
 
-      unregisterDeleteHandler = onUserDeleted((deletedUser) => {
+      unregisterDeleteHandler = onUserDeleted(deletedUser => {
         console.log('[Store] Received user deletion:', deletedUser)
 
         users.value = users.value.filter(u => u.id !== deletedUser.id)
@@ -117,12 +117,13 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null
   }
 
-  async function addUser(userData: Partial<User>): Promise<User> {
+  async function addUser(userData: User): Promise<User> {
+    const controller = new AbortController()
     loading.value = true
     error.value = null
 
     try {
-      const newUser = await createUser(userData)
+      const newUser = await createUser(userData, controller.signal)
       // Don't add locally - let SignalR event handler do it
       // This prevents duplicate entries in the creating browser
       return newUser
@@ -135,11 +136,12 @@ export const useUsersStore = defineStore('users', () => {
   }
 
   async function modifyUser(id: string, userData: Partial<User>): Promise<User> {
+    const controller = new AbortController()
     loading.value = true
     error.value = null
 
     try {
-      const updatedUser = await updateUser(id, userData)
+      const updatedUser = await updateUser(id, userData, controller.signal)
       // Don't update locally - let SignalR event handler do it
       return updatedUser
     } catch (err) {
@@ -151,11 +153,12 @@ export const useUsersStore = defineStore('users', () => {
   }
 
   async function removeUser(id: string): Promise<void> {
+    const controller = new AbortController()
     loading.value = true
     error.value = null
 
     try {
-      await deleteUser(id)
+      await deleteUser(id, controller.signal)
       // Don't remove locally - let SignalR event handler do it
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Unknown error occurred'
@@ -173,6 +176,6 @@ export const useUsersStore = defineStore('users', () => {
     addUser,
     modifyUser,
     removeUser,
-    cleanup
+    cleanup,
   }
 })

@@ -48,8 +48,9 @@ describe('users API', () => {
       const controller = new AbortController()
       controller.abort() // Abort immediately to prevent actual network call
       const userData = {
+        id: 'user_123',
         name: 'Test User',
-        nickname: 'tester'
+        nickname: 'tester',
       }
       expect(() => {
         createUser(userData, controller.signal).catch(() => {}) // Catch to prevent unhandled rejection
@@ -66,7 +67,7 @@ describe('users API', () => {
       const controller = new AbortController()
       controller.abort() // Abort immediately to prevent actual network call
       const updates = {
-        name: 'Updated Name'
+        name: 'Updated Name',
       }
       expect(() => {
         updateUser('user-1', updates, controller.signal).catch(() => {}) // Catch to prevent unhandled rejection
@@ -94,7 +95,7 @@ describe('users API', () => {
         id: '1',
         name: 'Test User',
         nickname: 'tester',
-        deviceId: 'device-1'
+        deviceId: 'device-1',
       }
 
       expect(user).toHaveProperty('id')
@@ -106,7 +107,7 @@ describe('users API', () => {
     it('should allow optional fields', () => {
       const user: User = {
         id: '1',
-        name: 'Test User'
+        name: 'Test User',
       }
 
       expect(user).toHaveProperty('id')

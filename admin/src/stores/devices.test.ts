@@ -40,9 +40,12 @@ describe('useDevicesStore', () => {
     it('should set loading to true while fetching', async () => {
       const store = useDevicesStore()
       let resolveFetch: any
-      vi.mocked(devicesApi.fetchDevices).mockImplementation(() => new Promise((resolve) => {
-        resolveFetch = resolve
-      }))
+      vi.mocked(devicesApi.fetchDevices).mockImplementation(
+        () =>
+          new Promise(resolve => {
+            resolveFetch = resolve
+          })
+      )
       vi.mocked(signalr.connectSignalR).mockResolvedValue({} as any)
       vi.mocked(signalr.onDeviceUpdated).mockReturnValue(() => {})
 
@@ -58,8 +61,8 @@ describe('useDevicesStore', () => {
     it('should load devices successfully', async () => {
       const store = useDevicesStore()
       const mockDevices = [
-        { deviceId: 'device1', status: 'online' as const },
-        { deviceId: 'device2', status: 'offline' as const }
+        { deviceId: 'device1', status: 'online' as const, lastSeen: '2024-01-01T00:00:00Z' },
+        { deviceId: 'device2', status: 'offline' as const, lastSeen: '2024-01-01T00:00:00Z' },
       ]
 
       vi.mocked(devicesApi.fetchDevices).mockResolvedValue(mockDevices)
@@ -115,7 +118,9 @@ describe('useDevicesStore', () => {
       const store = useDevicesStore()
 
       // Load some devices first
-      const mockDevices = [{ deviceId: 'test', status: 'online' as const }]
+      const mockDevices = [
+        { deviceId: 'test', status: 'online' as const, lastSeen: '2024-01-01T00:00:00Z' },
+      ]
       vi.mocked(devicesApi.fetchDevices).mockResolvedValue(mockDevices)
       vi.mocked(signalr.connectSignalR).mockResolvedValue({} as any)
       vi.mocked(signalr.onDeviceUpdated).mockReturnValue(() => {})

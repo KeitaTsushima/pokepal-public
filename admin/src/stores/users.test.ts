@@ -48,9 +48,12 @@ describe('useUsersStore', () => {
     it('should set loading to true while fetching', async () => {
       const store = useUsersStore()
       let resolveFetch: any
-      vi.mocked(usersApi.fetchUsers).mockImplementation(() => new Promise((resolve) => {
-        resolveFetch = resolve
-      }))
+      vi.mocked(usersApi.fetchUsers).mockImplementation(
+        () =>
+          new Promise(resolve => {
+            resolveFetch = resolve
+          })
+      )
       vi.mocked(signalr.connectSignalR).mockResolvedValue({} as any)
       vi.mocked(signalr.onUserUpdated).mockReturnValue(() => {})
       vi.mocked(signalr.onUserDeleted).mockReturnValue(() => {})
@@ -68,7 +71,7 @@ describe('useUsersStore', () => {
       const store = useUsersStore()
       const mockUsers = [
         { id: 'user1', name: 'Alice', email: 'alice@example.com', role: 'admin' },
-        { id: 'user2', name: 'Bob', email: 'bob@example.com', role: 'user' }
+        { id: 'user2', name: 'Bob', email: 'bob@example.com', role: 'user' },
       ]
 
       vi.mocked(usersApi.fetchUsers).mockResolvedValue(mockUsers)
@@ -112,8 +115,8 @@ describe('useUsersStore', () => {
   describe('addUser', () => {
     it('should create user successfully', async () => {
       const store = useUsersStore()
-      const userData = { name: 'Charlie', email: 'charlie@example.com', role: 'user' }
-      const createdUser = { id: 'user3', ...userData }
+      const userData = { id: 'user3', name: 'Charlie', nickname: 'Charlie' }
+      const createdUser = { ...userData }
 
       vi.mocked(usersApi.createUser).mockResolvedValue(createdUser)
 
@@ -127,7 +130,7 @@ describe('useUsersStore', () => {
 
     it('should handle creation errors', async () => {
       const store = useUsersStore()
-      const userData = { name: 'Charlie', email: 'charlie@example.com' }
+      const userData = { id: 'user4', name: 'Charlie' }
       const errorMessage = 'Validation error'
 
       vi.mocked(usersApi.createUser).mockRejectedValue(new Error(errorMessage))
@@ -144,7 +147,12 @@ describe('useUsersStore', () => {
       const store = useUsersStore()
       const userId = 'user1'
       const userData = { name: 'Alice Updated' }
-      const updatedUser = { id: userId, name: 'Alice Updated', email: 'alice@example.com', role: 'admin' }
+      const updatedUser = {
+        id: userId,
+        name: 'Alice Updated',
+        email: 'alice@example.com',
+        role: 'admin',
+      }
 
       vi.mocked(usersApi.updateUser).mockResolvedValue(updatedUser)
 

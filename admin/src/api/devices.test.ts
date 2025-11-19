@@ -33,7 +33,8 @@ describe('devices API', () => {
     it('should have correct structure', () => {
       const device: Device = {
         deviceId: 'test-device',
-        status: 'online'
+        status: 'online',
+        lastSeen: '2024-01-01T00:00:00Z',
       }
 
       expect(device).toHaveProperty('deviceId')

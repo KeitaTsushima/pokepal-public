@@ -12,7 +12,8 @@ export interface User {
   name: string
   nickname?: string
   deviceId?: string
-  // Add other fields as needed based on API response
+  roomNumber?: string
+  notes?: string
 }
 
 /**
@@ -94,7 +95,7 @@ export async function fetchUserById(id: string, signal: AbortSignal): Promise<Us
 /**
  * Create new user
  */
-export async function createUser(userData: Omit<User, 'id'>, signal: AbortSignal): Promise<User> {
+export async function createUser(userData: User, signal: AbortSignal): Promise<User> {
   try {
     const response = await apiClient.post<User>(`${API_BASE_URL}/api/users`, userData, { signal })
 
@@ -130,9 +131,15 @@ export async function createUser(userData: Omit<User, 'id'>, signal: AbortSignal
 /**
  * Update user
  */
-export async function updateUser(id: string, userData: Partial<Omit<User, 'id'>>, signal: AbortSignal): Promise<User> {
+export async function updateUser(
+  id: string,
+  userData: Partial<Omit<User, 'id'>>,
+  signal: AbortSignal
+): Promise<User> {
   try {
-    const response = await apiClient.put<User>(`${API_BASE_URL}/api/users/${id}`, userData, { signal })
+    const response = await apiClient.put<User>(`${API_BASE_URL}/api/users/${id}`, userData, {
+      signal,
+    })
 
     if (!response.data) {
       throw new Error('Empty response from server')

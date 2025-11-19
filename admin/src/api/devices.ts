@@ -11,7 +11,7 @@ export type DeviceStatus = 'online' | 'offline' | 'unknown'
 export interface Device {
   deviceId: string
   status: DeviceStatus
-  // TODO: Add other properties as we discover them (timestamp, lastUpdated, etc.)
+  lastSeen: string
 }
 
 /**
