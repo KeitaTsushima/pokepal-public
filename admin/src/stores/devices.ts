@@ -61,6 +61,8 @@ export const useDevicesStore = defineStore('devices', () => {
 
         // Merge updated devices with existing devices
         updatedDevices.forEach(updated => {
+          // SignalR callback nesting is unavoidable, findIndex is standard pattern
+          // eslint-disable-next-line sonarjs/no-nested-functions
           const index = devices.value.findIndex(d => d.deviceId === updated.deviceId)
           if (index !== -1) {
             // Update existing device
@@ -108,6 +110,6 @@ export const useDevicesStore = defineStore('devices', () => {
     loading,
     error,
     loadDevices,
-    cleanup
+    cleanup,
   }
 })

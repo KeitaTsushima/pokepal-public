@@ -1,4 +1,9 @@
-import axios, { type AxiosInstance, type InternalAxiosRequestConfig, type AxiosResponse, type AxiosError } from 'axios'
+import axios, {
+  type AxiosInstance,
+  type InternalAxiosRequestConfig,
+  type AxiosResponse,
+  type AxiosError,
+} from 'axios'
 
 // Extend AxiosRequestConfig to include metadata
 interface RequestConfigWithMetadata extends InternalAxiosRequestConfig {
@@ -17,18 +22,21 @@ const DEFAULT_TIMEOUT = 10000 // 10 seconds = 10,000 milliseconds
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://pokepal-device-status-api.azurewebsites.net',
+  baseURL:
+    import.meta.env.VITE_API_BASE_URL || 'https://pokepal-device-status-api.azurewebsites.net',
   timeout: DEFAULT_TIMEOUT,
 })
 
 // Record request start time for latency measurement
-apiClient.interceptors.request.use((config: InternalAxiosRequestConfig): RequestConfigWithMetadata => {
-  const configWithMetadata = config as RequestConfigWithMetadata
-  configWithMetadata.metadata = { startTime: Date.now() }
-  // Phase 5: Add authentication token
-  // if (token) config.headers.Authorization = `Bearer ${token}`;
-  return configWithMetadata
-})
+apiClient.interceptors.request.use(
+  (config: InternalAxiosRequestConfig): RequestConfigWithMetadata => {
+    const configWithMetadata = config as RequestConfigWithMetadata
+    configWithMetadata.metadata = { startTime: Date.now() }
+    // Phase 5: Add authentication token
+    // if (token) config.headers.Authorization = `Bearer ${token}`;
+    return configWithMetadata
+  }
+)
 
 // Response interceptor for success and error handling
 apiClient.interceptors.response.use(
@@ -42,7 +50,7 @@ apiClient.interceptors.response.use(
       method: config.method,
       url: config.url,
       status: response.status,
-      duration
+      duration,
     })
     return response
   },

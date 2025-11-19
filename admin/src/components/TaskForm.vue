@@ -9,7 +9,7 @@
         type="text"
         placeholder="朝の服薬"
         required
-        :class="{ 'error': errors.title }"
+        :class="{ error: errors.title }"
       />
       <span v-if="errors.title" class="error-message">{{ errors.title }}</span>
     </div>
@@ -22,7 +22,7 @@
         v-model="formData.time"
         type="time"
         required
-        :class="{ 'error': errors.time }"
+        :class="{ error: errors.time }"
       />
       <span v-if="errors.time" class="error-message">{{ errors.time }}</span>
     </div>
@@ -30,11 +30,7 @@
     <!-- Enabled (Checkbox) -->
     <div class="form-group">
       <label class="checkbox-label">
-        <input
-          id="enabled"
-          v-model="formData.enabled"
-          type="checkbox"
-        />
+        <input id="enabled" v-model="formData.enabled" type="checkbox" />
         <span>有効</span>
       </label>
       <p class="help-text">チェックを外すと、このタスクは実行されません</p>
@@ -42,9 +38,7 @@
 
     <!-- Action Buttons -->
     <div class="form-actions">
-      <button type="button" @click="handleCancel" class="btn-secondary">
-        キャンセル
-      </button>
+      <button type="button" @click="handleCancel" class="btn-secondary">キャンセル</button>
       <button type="submit" class="btn-primary" :disabled="!isFormValid">
         {{ isEditMode ? '更新' : '登録' }}
       </button>
@@ -53,68 +47,72 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue';
+import { reactive, computed, watch } from 'vue'
 
 // Props
 const props = defineProps({
   task: {
     type: Object,
-    default: null
-  }
-});
+    default: null,
+  },
+})
 
 // Emits
-const emit = defineEmits(['submit', 'cancel']);
+const emit = defineEmits(['submit', 'cancel'])
 
 // Check if in edit mode
-const isEditMode = computed(() => props.task !== null);
+const isEditMode = computed(() => props.task !== null)
 
 // Form data
 const formData = reactive({
   title: '',
   time: '',
-  enabled: true
-});
+  enabled: true,
+})
 
 // Error state
 const errors = reactive({
   title: '',
-  time: ''
-});
+  time: '',
+})
 
 // Populate form when props.task changes (edit mode)
-watch(() => props.task, (newTask) => {
-  if (newTask) {
-    formData.title = newTask.title || '';
-    formData.time = newTask.time || '';
-    formData.enabled = newTask.enabled !== undefined ? newTask.enabled : true;
-  } else {
-    // Reset form for create mode
-    resetForm();
-  }
-}, { immediate: true });
+watch(
+  () => props.task,
+  newTask => {
+    if (newTask) {
+      formData.title = newTask.title || ''
+      formData.time = newTask.time || ''
+      formData.enabled = newTask.enabled !== undefined ? newTask.enabled : true
+    } else {
+      // Reset form for create mode
+      resetForm()
+    }
+  },
+  { immediate: true }
+)
 
 // Form validation check
 const isFormValid = computed(() => {
-  return formData.title.trim() !== '' && formData.time !== '';
-});
+  return formData.title.trim() !== '' && formData.time !== ''
+})
 
 /**
  * Validate form fields
  */
 function validateForm() {
-  errors.title = '';
-  errors.time = '';
+  errors.title = ''
+  errors.time = ''
 
   if (!formData.title.trim()) {
-    errors.title = 'タイトルは必須です';
+    errors.title = 'タイトルは必須です'
   }
 
   if (!formData.time) {
-    errors.time = '時刻は必須です';
+    errors.time = '時刻は必須です'
   }
 
-  return !errors.title && !errors.time;
+  return !errors.title && !errors.time
 }
 
 /**
@@ -122,35 +120,35 @@ function validateForm() {
  */
 function handleSubmit() {
   if (!validateForm()) {
-    return;
+    return
   }
 
   const taskData = {
     title: formData.title.trim(),
     time: formData.time,
-    enabled: formData.enabled
-  };
+    enabled: formData.enabled,
+  }
 
-  emit('submit', taskData);
+  emit('submit', taskData)
 }
 
 /**
  * Handle cancel action
  */
 function handleCancel() {
-  resetForm();
-  emit('cancel');
+  resetForm()
+  emit('cancel')
 }
 
 /**
  * Reset form to initial state
  */
 function resetForm() {
-  formData.title = '';
-  formData.time = '';
-  formData.enabled = true;
-  errors.title = '';
-  errors.time = '';
+  formData.title = ''
+  formData.time = ''
+  formData.enabled = true
+  errors.title = ''
+  errors.time = ''
 }
 </script>
 
@@ -176,8 +174,8 @@ label.required::after {
   color: #ef4444;
 }
 
-input[type="text"],
-input[type="time"] {
+input[type='text'],
+input[type='time'] {
   width: 100%;
   padding: 0.5rem 0.75rem;
   border: 1px solid #d1d5db;
@@ -186,8 +184,8 @@ input[type="time"] {
   transition: border-color 0.15s ease-in-out;
 }
 
-input[type="text"]:focus,
-input[type="time"]:focus {
+input[type='text']:focus,
+input[type='time']:focus {
   outline: none;
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
@@ -212,7 +210,7 @@ input.error {
   font-weight: normal;
 }
 
-.checkbox-label input[type="checkbox"] {
+.checkbox-label input[type='checkbox'] {
   width: 1.25rem;
   height: 1.25rem;
   cursor: pointer;

@@ -29,7 +29,7 @@ describe('useToastStore', () => {
       id: 0,
       message: 'Success message',
       type: 'success',
-      duration: 3000
+      duration: 3000,
     })
   })
 
@@ -42,7 +42,7 @@ describe('useToastStore', () => {
       id: 0,
       message: 'Error message',
       type: 'error',
-      duration: 5000
+      duration: 5000,
     })
   })
 

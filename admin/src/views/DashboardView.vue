@@ -1,31 +1,31 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
-import { useDevicesStore } from '../stores/devices';
-import { formatDeviceName, formatStatus, formatRelativeTime } from '../utils/formatters';
+import { ref, onMounted, onUnmounted } from 'vue'
+import { useDevicesStore } from '../stores/devices'
+import { formatDeviceName, formatStatus, formatRelativeTime } from '../utils/formatters'
 
-const devicesStore = useDevicesStore();
+const devicesStore = useDevicesStore()
 
 // Current time updated every minute for relative time display
-const currentTime = ref(Date.now());
-let timeUpdateInterval = null;
+const currentTime = ref(Date.now())
+let timeUpdateInterval = null
 
 // Load device data on mount
 onMounted(() => {
-  devicesStore.loadDevices();
+  devicesStore.loadDevices()
 
   // Update current time every minute to refresh relative time display
   timeUpdateInterval = setInterval(() => {
-    currentTime.value = Date.now();
-  }, 60000); // 60 seconds
-});
+    currentTime.value = Date.now()
+  }, 60000) // 60 seconds
+})
 
 // Clean up timer on unmount
 onUnmounted(() => {
   if (timeUpdateInterval) {
-    clearInterval(timeUpdateInterval);
+    clearInterval(timeUpdateInterval)
   }
-  devicesStore.cleanup();
-});
+  devicesStore.cleanup()
+})
 </script>
 
 <template>
@@ -45,9 +45,7 @@ onUnmounted(() => {
     <div v-for="device in devicesStore.devices" :key="device.deviceId" class="device-card">
       <p>{{ formatDeviceName(device.deviceId) }} - {{ formatStatus(device.status) }}</p>
       <p>最終更新: {{ formatRelativeTime(device.lastSeen, currentTime) }}</p>
-      <p v-if="device.lastConversation">
-        最後の会話: 「{{ device.lastConversation.text }}」
-      </p>
+      <p v-if="device.lastConversation">最後の会話: 「{{ device.lastConversation.text }}」</p>
     </div>
   </div>
 </template>

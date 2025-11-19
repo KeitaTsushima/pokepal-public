@@ -3,12 +3,7 @@
     <!-- User ID (Read-only, shown only in edit mode) -->
     <div v-if="isEditMode" class="form-group">
       <label for="userId">ユーザーID</label>
-      <input
-        id="userId"
-        :value="props.user.id"
-        type="text"
-        disabled
-      />
+      <input id="userId" :value="props.user.id" type="text" disabled />
     </div>
 
     <!-- Name (Required, Read-only in Edit Mode) -->
@@ -21,7 +16,7 @@
         placeholder="山田 太郎"
         required
         :disabled="isEditMode"
-        :class="{ 'error': errors.name }"
+        :class="{ error: errors.name }"
       />
       <span v-if="errors.name" class="error-message">{{ errors.name }}</span>
     </div>
@@ -29,23 +24,13 @@
     <!-- Nickname (Optional) -->
     <div class="form-group">
       <label for="nickname">呼び方</label>
-      <input
-        id="nickname"
-        v-model="formData.nickname"
-        type="text"
-        placeholder="太郎さん"
-      />
+      <input id="nickname" v-model="formData.nickname" type="text" placeholder="太郎さん" />
     </div>
 
     <!-- Room Number (Optional) -->
     <div class="form-group">
       <label for="roomNumber">部屋番号</label>
-      <input
-        id="roomNumber"
-        v-model="formData.roomNumber"
-        type="text"
-        placeholder="101"
-      />
+      <input id="roomNumber" v-model="formData.roomNumber" type="text" placeholder="101" />
     </div>
 
     <!-- Device ID (Required, Read-only in Edit Mode) -->
@@ -58,7 +43,7 @@
         placeholder="devicenumber99"
         required
         :disabled="isEditMode"
-        :class="{ 'error': errors.deviceId }"
+        :class="{ error: errors.deviceId }"
       />
       <span v-if="errors.deviceId" class="error-message">{{ errors.deviceId }}</span>
     </div>
@@ -76,9 +61,7 @@
 
     <!-- Action Buttons -->
     <div class="form-actions">
-      <button type="button" @click="handleCancel" class="btn-secondary">
-        キャンセル
-      </button>
+      <button type="button" @click="handleCancel" class="btn-secondary">キャンセル</button>
       <button type="submit" class="btn-primary" :disabled="!isFormValid">
         {{ isEditMode ? '更新' : '登録' }}
       </button>
@@ -87,21 +70,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue';
+import { reactive, computed, watch } from 'vue'
 
 // Props
 const props = defineProps({
   user: {
     type: Object,
-    default: null
-  }
-});
+    default: null,
+  },
+})
 
 // Emits
-const emit = defineEmits(['submit', 'cancel']);
+const emit = defineEmits(['submit', 'cancel'])
 
 // Check if in edit mode
-const isEditMode = computed(() => props.user !== null);
+const isEditMode = computed(() => props.user !== null)
 
 // Form data
 const formData = reactive({
@@ -109,54 +92,58 @@ const formData = reactive({
   nickname: '',
   roomNumber: '',
   deviceId: '',
-  notes: ''
-});
+  notes: '',
+})
 
 // Error state
 const errors = reactive({
   name: '',
-  deviceId: ''
-});
+  deviceId: '',
+})
 
 // Populate form when props.user changes (edit mode)
-watch(() => props.user, (newUser) => {
-  if (newUser) {
-    formData.name = newUser.name || '';
-    formData.nickname = newUser.nickname || '';
-    formData.roomNumber = newUser.roomNumber || '';
-    formData.deviceId = newUser.deviceId || '';
-    formData.notes = newUser.notes || '';
-  } else {
-    // Reset form for create mode
-    resetForm();
-  }
-}, { immediate: true });
+watch(
+  () => props.user,
+  newUser => {
+    if (newUser) {
+      formData.name = newUser.name || ''
+      formData.nickname = newUser.nickname || ''
+      formData.roomNumber = newUser.roomNumber || ''
+      formData.deviceId = newUser.deviceId || ''
+      formData.notes = newUser.notes || ''
+    } else {
+      // Reset form for create mode
+      resetForm()
+    }
+  },
+  { immediate: true }
+)
 
 // Form validation check
 const isFormValid = computed(() => {
-  return formData.name.trim() !== '' && formData.deviceId !== '';
-});
+  return formData.name.trim() !== '' && formData.deviceId !== ''
+})
 
 // Validate form fields
 function validateForm() {
-  errors.name = '';
-  errors.deviceId = '';
+  errors.name = ''
+  errors.deviceId = ''
 
   if (!formData.name.trim()) {
-    errors.name = '氏名は必須です';
+    errors.name = '氏名は必須です'
   }
 
   if (!formData.deviceId) {
-    errors.deviceId = 'デバイスは必須です';
+    errors.deviceId = 'デバイスは必須です'
   }
 
-  return !errors.name && !errors.deviceId;
+  return !errors.name && !errors.deviceId
 }
 
 // Handle form submission
 function handleSubmit() {
   if (!validateForm()) {
-    return;
+    return
   }
 
   // Convert empty strings to null for optional fields
@@ -165,27 +152,27 @@ function handleSubmit() {
     nickname: formData.nickname.trim() || null,
     roomNumber: formData.roomNumber.trim() || null,
     deviceId: formData.deviceId,
-    notes: formData.notes.trim() || null
-  };
+    notes: formData.notes.trim() || null,
+  }
 
-  emit('submit', userData);
+  emit('submit', userData)
 }
 
 // Handle cancel action
 function handleCancel() {
-  resetForm();
-  emit('cancel');
+  resetForm()
+  emit('cancel')
 }
 
 // Reset form to initial state
 function resetForm() {
-  formData.name = '';
-  formData.nickname = '';
-  formData.roomNumber = '';
-  formData.deviceId = '';
-  formData.notes = '';
-  errors.name = '';
-  errors.deviceId = '';
+  formData.name = ''
+  formData.nickname = ''
+  formData.roomNumber = ''
+  formData.deviceId = ''
+  formData.notes = ''
+  errors.name = ''
+  errors.deviceId = ''
 }
 </script>
 
@@ -211,7 +198,7 @@ label.required::after {
   color: #ef4444;
 }
 
-input[type="text"],
+input[type='text'],
 select,
 textarea {
   width: 100%;
@@ -222,7 +209,7 @@ textarea {
   transition: border-color 0.15s ease-in-out;
 }
 
-input[type="text"]:focus,
+input[type='text']:focus,
 select:focus,
 textarea:focus {
   outline: none;

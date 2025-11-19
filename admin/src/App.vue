@@ -1,15 +1,18 @@
 <script setup>
-import { onErrorCaptured } from 'vue';
+import { onErrorCaptured } from 'vue'
+import Toast from './components/Toast.vue'
 
 // Error Boundary - catch unexpected errors
-onErrorCaptured((err) => {
-  console.error('[Error Boundary]', err);
-  return false; // Stop error propagation
-});
+onErrorCaptured(err => {
+  console.error('[Error Boundary]', err)
+  return false // Stop error propagation
+})
 </script>
 
 <template>
   <div id="app">
+    <Toast />
+
     <header>
       <h1>PokePal 管理画面</h1>
       <nav>

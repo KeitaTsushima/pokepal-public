@@ -1,42 +1,42 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
-import { useUsersStore } from '../stores/users';
-import { useToastStore } from '../stores/toast';
-import UserForm from '../components/UserForm.vue';
+import { ref, onMounted, onUnmounted } from 'vue'
+import { useUsersStore } from '../stores/users'
+import { useToastStore } from '../stores/toast'
+import UserForm from '../components/UserForm.vue'
 
-const usersStore = useUsersStore();
-const toastStore = useToastStore();
-const showModal = ref(false);
-const editingUser = ref(null);
-const showDeleteDialog = ref(false);
-const deletingUser = ref(null);
+const usersStore = useUsersStore()
+const toastStore = useToastStore()
+const showModal = ref(false)
+const editingUser = ref(null)
+const showDeleteDialog = ref(false)
+const deletingUser = ref(null)
 
 // Load users on mount
 onMounted(() => {
-  usersStore.loadUsers();
-});
+  usersStore.loadUsers()
+})
 
 // Cleanup SignalR on unmount
 onUnmounted(() => {
-  usersStore.cleanup();
-});
+  usersStore.cleanup()
+})
 
 // Open create modal
 function openCreateModal() {
-  editingUser.value = null;
-  showModal.value = true;
+  editingUser.value = null
+  showModal.value = true
 }
 
 // Open edit modal
 function openEditModal(user) {
-  editingUser.value = user;
-  showModal.value = true;
+  editingUser.value = user
+  showModal.value = true
 }
 
 // Close modal
 function closeModal() {
-  showModal.value = false;
-  editingUser.value = null;
+  showModal.value = false
+  editingUser.value = null
 }
 
 // Handle user creation or update
@@ -44,46 +44,46 @@ async function handleUserSubmit(userData) {
   try {
     if (editingUser.value) {
       // Update existing user
-      await usersStore.modifyUser(editingUser.value.id, userData);
-      toastStore.showSuccess('利用者を更新しました');
+      await usersStore.modifyUser(editingUser.value.id, userData)
+      toastStore.showSuccess('利用者を更新しました')
     } else {
       // Create new user
-      const userId = `user_${Date.now()}`;
-      const newUser = { id: userId, ...userData };
-      await usersStore.addUser(newUser);
-      toastStore.showSuccess('利用者を登録しました');
+      const userId = `user_${Date.now()}`
+      const newUser = { id: userId, ...userData }
+      await usersStore.addUser(newUser)
+      toastStore.showSuccess('利用者を登録しました')
     }
-    closeModal();
+    closeModal()
   } catch (error) {
-    console.error('Failed to save user:', error);
-    toastStore.showError('保存に失敗しました');
+    console.error('Failed to save user:', error instanceof Error ? error.message : String(error))
+    toastStore.showError('保存に失敗しました')
   }
 }
 
 // Open delete confirmation dialog
 function confirmDelete(user) {
-  deletingUser.value = user;
-  showDeleteDialog.value = true;
+  deletingUser.value = user
+  showDeleteDialog.value = true
 }
 
 // Cancel deletion
 function cancelDelete() {
-  showDeleteDialog.value = false;
-  deletingUser.value = null;
+  showDeleteDialog.value = false
+  deletingUser.value = null
 }
 
 // Execute deletion
 async function executeDelete() {
-  if (!deletingUser.value) return;
+  if (!deletingUser.value) return
 
   try {
-    await usersStore.removeUser(deletingUser.value.id);
-    toastStore.showSuccess('利用者を削除しました');
-    showDeleteDialog.value = false;
-    deletingUser.value = null;
+    await usersStore.removeUser(deletingUser.value.id)
+    toastStore.showSuccess('利用者を削除しました')
+    showDeleteDialog.value = false
+    deletingUser.value = null
   } catch (error) {
-    console.error('Failed to delete user:', error);
-    toastStore.showError('削除に失敗しました');
+    console.error('Failed to delete user:', error instanceof Error ? error.message : String(error))
+    toastStore.showError('削除に失敗しました')
   }
 }
 </script>

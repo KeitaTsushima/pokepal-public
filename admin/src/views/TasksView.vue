@@ -1,55 +1,55 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { useUsersStore } from '../stores/users';
-import { useToastStore } from '../stores/toast';
-import TaskForm from '../components/TaskForm.vue';
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useUsersStore } from '../stores/users'
+import { useToastStore } from '../stores/toast'
+import TaskForm from '../components/TaskForm.vue'
 
-const route = useRoute();
-const router = useRouter();
-const usersStore = useUsersStore();
-const toastStore = useToastStore();
+const route = useRoute()
+const router = useRouter()
+const usersStore = useUsersStore()
+const toastStore = useToastStore()
 
 // Get user ID from URL parameter
-const userId = route.params.id;
+const userId = route.params.id
 
 // User data - computed to react to store changes (SignalR updates)
 const user = computed(() => {
-  return usersStore.users.find(u => u.id === userId);
-});
+  return usersStore.users.find(u => u.id === userId)
+})
 
-const loading = ref(true);
+const loading = ref(true)
 
 // Modal state
-const showModal = ref(false);
-const editingTask = ref(null);
+const showModal = ref(false)
+const editingTask = ref(null)
 
 // Load user data on mount
 onMounted(async () => {
-  await loadUsers();
-});
+  await loadUsers()
+})
 
 /**
  * Load users data from store
  */
 async function loadUsers() {
-  loading.value = true;
+  loading.value = true
 
   try {
     // Ensure users are loaded
     if (usersStore.users.length === 0) {
-      await usersStore.loadUsers();
+      await usersStore.loadUsers()
     }
 
     if (!user.value) {
-      toastStore.showError('利用者が見つかりません');
-      router.push('/users');
+      toastStore.showError('利用者が見つかりません')
+      router.push('/users')
     }
   } catch (error) {
-    console.error('Failed to load users:', error);
-    toastStore.showError('利用者情報の取得に失敗しました');
+    console.error('Failed to load users:', error)
+    toastStore.showError('利用者情報の取得に失敗しました')
   } finally {
-    loading.value = false;
+    loading.value = false
   }
 }
 
@@ -57,31 +57,31 @@ async function loadUsers() {
  * Navigate back to users list
  */
 function goBack() {
-  router.push('/users');
+  router.push('/users')
 }
 
 /**
  * Add new task
  */
 function addTask() {
-  editingTask.value = null;
-  showModal.value = true;
+  editingTask.value = null
+  showModal.value = true
 }
 
 /**
  * Edit task
  */
 function editTask(task) {
-  editingTask.value = JSON.parse(JSON.stringify(task));
-  showModal.value = true;
+  editingTask.value = JSON.parse(JSON.stringify(task))
+  showModal.value = true
 }
 
 /**
  * Close modal
  */
 function closeModal() {
-  showModal.value = false;
-  editingTask.value = null;
+  showModal.value = false
+  editingTask.value = null
 }
 
 /**
@@ -89,35 +89,35 @@ function closeModal() {
  */
 async function handleTaskSubmit(taskData) {
   try {
-    const tasks = JSON.parse(JSON.stringify(user.value.proactiveTasks || []));
+    const tasks = JSON.parse(JSON.stringify(user.value.proactiveTasks || []))
 
     if (editingTask.value) {
       // Update existing task
-      const index = tasks.findIndex(t => t.id === editingTask.value.id);
+      const index = tasks.findIndex(t => t.id === editingTask.value.id)
       if (index !== -1) {
-        tasks[index] = { ...editingTask.value, ...taskData };
+        tasks[index] = { ...editingTask.value, ...taskData }
       }
     } else {
       // Add new task
       const newTask = {
         id: `task_${Date.now()}`,
-        ...taskData
-      };
-      tasks.push(newTask);
+        ...taskData,
+      }
+      tasks.push(newTask)
     }
 
     // Update user via API
     await usersStore.modifyUser(userId, {
-      proactiveTasks: tasks
-    });
+      proactiveTasks: tasks,
+    })
 
-    toastStore.showSuccess(editingTask.value ? 'タスクを更新しました' : 'タスクを追加しました');
-    closeModal();
+    toastStore.showSuccess(editingTask.value ? 'タスクを更新しました' : 'タスクを追加しました')
+    closeModal()
 
     // No need to reload - computed property will auto-update via SignalR
   } catch (error) {
-    console.error('Failed to save task:', error);
-    toastStore.showError('タスクの保存に失敗しました');
+    console.error('Failed to save task:', error)
+    toastStore.showError('タスクの保存に失敗しました')
   }
 }
 
@@ -126,25 +126,25 @@ async function handleTaskSubmit(taskData) {
  */
 async function deleteTask(task) {
   // Show confirmation dialog
-  const confirmed = confirm(`「${task.title}」を削除しますか？`);
+  const confirmed = confirm(`「${task.title}」を削除しますか？`)
   if (!confirmed) {
-    return;
+    return
   }
 
   try {
     // Remove task from array (deep copy to avoid mutation)
-    const tasks = JSON.parse(JSON.stringify(user.value.proactiveTasks || []));
-    const updatedTasks = tasks.filter(t => t.id !== task.id);
+    const tasks = JSON.parse(JSON.stringify(user.value.proactiveTasks || []))
+    const updatedTasks = tasks.filter(t => t.id !== task.id)
 
     // Update user via API
     await usersStore.modifyUser(userId, {
-      proactiveTasks: updatedTasks
-    });
+      proactiveTasks: updatedTasks,
+    })
 
-    toastStore.showSuccess('タスクを削除しました');
+    toastStore.showSuccess('タスクを削除しました')
   } catch (error) {
-    console.error('Failed to delete task:', error);
-    toastStore.showError('タスクの削除に失敗しました');
+    console.error('Failed to delete task:', error)
+    toastStore.showError('タスクの削除に失敗しました')
   }
 }
 </script>
@@ -182,7 +182,10 @@ async function deleteTask(task) {
             <div class="task-info">
               <h3>{{ task.title }}</h3>
               <p class="task-time">{{ task.time }}</p>
-              <p class="task-status" :class="{ 'status-enabled': task.enabled, 'status-disabled': !task.enabled }">
+              <p
+                class="task-status"
+                :class="{ 'status-enabled': task.enabled, 'status-disabled': !task.enabled }"
+              >
                 {{ task.enabled ? '有効' : '無効' }}
               </p>
             </div>

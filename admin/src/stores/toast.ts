@@ -46,7 +46,7 @@ export const useToastStore = defineStore('toast', (): ToastStore => {
       id,
       message,
       type,
-      duration
+      duration,
     })
 
     // Auto-dismiss after duration
@@ -108,6 +108,6 @@ export const useToastStore = defineStore('toast', (): ToastStore => {
     toasts,
     showSuccess,
     showError,
-    dismissToast
+    dismissToast,
   }
 })

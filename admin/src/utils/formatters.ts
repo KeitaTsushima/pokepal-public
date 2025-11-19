@@ -1,14 +1,14 @@
 import type { Ref } from 'vue'
 
 const DEVICE_NAME_MAPPING: Record<string, string> = {
-  'PokepalDevice1': 'Device #1 (RaspberryPi)',
-  'PokepalDevice2': 'Device #2 (Jetson)'
+  PokepalDevice1: 'Device #1 (RaspberryPi)',
+  PokepalDevice2: 'Device #2 (Jetson)',
 }
 
 const STATUS_MAPPING: Record<string, string> = {
-  'online': '🟢 オンライン',
-  'offline': '🔴 オフライン',
-  'unknown': '⚪ 不明'
+  online: '🟢 オンライン',
+  offline: '🔴 オフライン',
+  unknown: '⚪ 不明',
 }
 
 /**
@@ -49,7 +49,7 @@ export function formatRelativeTime(
   const now = new Date(nowMs)
 
   // Add 'Z' suffix if not present to treat as UTC (only if no timezone designator)
-  const hasTimezone = /Z|[+-]\d{2}:\d{2}$/.test(timestamp)
+  const hasTimezone = /(Z|[+-]\d{2}:\d{2})$/.test(timestamp)
   const timestampStr = hasTimezone ? timestamp : timestamp + 'Z'
   const then = new Date(timestampStr)
 
