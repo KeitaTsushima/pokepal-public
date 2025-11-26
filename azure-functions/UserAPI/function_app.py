@@ -61,12 +61,14 @@ def transform_tasks_for_device(tasks, user_name):
     """
     transformed = []
     for task in tasks:
+        message = (task.get("message") or "").strip() or f"{user_name}さん、{task.get('title')}の時間です"
+
         transformed.append({
             "id": task.get("id"),
             "scope": "personal",
-            "type": "reminder",
+            "type": task.get("type", "reminder"),
             "name": task.get("title"),
-            "message": f"{user_name}さん、{task.get('title')}の時間です",
+            "message": message,
             "time": task.get("time"),
             "enabled": task.get("enabled", True)
         })

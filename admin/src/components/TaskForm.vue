@@ -14,6 +14,16 @@
       <span v-if="errors.title" class="error-message">{{ errors.title }}</span>
     </div>
 
+    <!-- Task Type (Required) -->
+    <div class="form-group">
+      <label for="type" class="required">タスクタイプ</label>
+      <select id="type" v-model="formData.type" required>
+        <option v-for="option in taskTypeOptions" :key="option.value" :value="option.value">
+          {{ option.label }}
+        </option>
+      </select>
+    </div>
+
     <!-- Time (Required) -->
     <div class="form-group">
       <label for="time" class="required">時刻</label>
@@ -25,6 +35,18 @@
         :class="{ error: errors.time }"
       />
       <span v-if="errors.time" class="error-message">{{ errors.time }}</span>
+    </div>
+
+    <!-- Message (Optional) -->
+    <div class="form-group">
+      <label for="message">メッセージ</label>
+      <textarea
+        id="message"
+        v-model="formData.message"
+        rows="2"
+        placeholder="空欄の場合は「○○さん、{タイトル}の時間です」と自動生成されます"
+      ></textarea>
+      <p class="help-text">デバイスで読み上げるメッセージをカスタマイズできます</p>
     </div>
 
     <!-- Enabled (Checkbox) -->
@@ -60,13 +82,27 @@ const props = defineProps({
 // Emits
 const emit = defineEmits(['submit', 'cancel'])
 
+// Task type options (8 types supported by voice-conversation module)
+const taskTypeOptions = [
+  { value: 'medication', label: '服薬' },
+  { value: 'medical_appointment', label: '診察・検査' },
+  { value: 'lifestyle', label: '生活習慣' },
+  { value: 'personal_task', label: '個人タスク' },
+  { value: 'greeting', label: '挨拶' },
+  { value: 'social', label: '社会的活動' },
+  { value: 'reminder', label: 'リマインダー' },
+  { value: 'other', label: 'その他' },
+]
+
 // Check if in edit mode
 const isEditMode = computed(() => props.task !== null)
 
 // Form data
 const formData = reactive({
   title: '',
+  type: 'reminder',
   time: '',
+  message: '',
   enabled: true,
 })
 
@@ -82,7 +118,9 @@ watch(
   newTask => {
     if (newTask) {
       formData.title = newTask.title || ''
+      formData.type = newTask.type || 'reminder'
       formData.time = newTask.time || ''
+      formData.message = newTask.message || ''
       formData.enabled = newTask.enabled !== undefined ? newTask.enabled : true
     } else {
       // Reset form for create mode
@@ -125,7 +163,9 @@ function handleSubmit() {
 
   const taskData = {
     title: formData.title.trim(),
+    type: formData.type,
     time: formData.time,
+    message: formData.message.trim() || null,  // Empty string → null (backend will auto-generate)
     enabled: formData.enabled,
   }
 
@@ -145,7 +185,9 @@ function handleCancel() {
  */
 function resetForm() {
   formData.title = ''
+  formData.type = 'reminder'
   formData.time = ''
+  formData.message = ''
   formData.enabled = true
   errors.title = ''
   errors.time = ''
@@ -175,7 +217,9 @@ label.required::after {
 }
 
 input[type='text'],
-input[type='time'] {
+input[type='time'],
+select,
+textarea {
   width: 100%;
   padding: 0.5rem 0.75rem;
   border: 1px solid #d1d5db;
@@ -184,8 +228,21 @@ input[type='time'] {
   transition: border-color 0.15s ease-in-out;
 }
 
+select {
+  background-color: white;
+  cursor: pointer;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
 input[type='text']:focus,
-input[type='time']:focus {
+input[type='time']:focus,
+select:focus,
+textarea:focus {
   outline: none;
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
