@@ -9,6 +9,11 @@ reviews:
     base_branches:
       - ".*"
 
+  # Exclude documentation files from review
+  path_filters:
+    - "!docs/**"
+    - "!**/*.md"
+
   # Review profile: assertive (more feedback) or chill (less feedback)
   profile: assertive
 
