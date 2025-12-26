@@ -29,7 +29,7 @@
         "retention_days": 7,
         "max_memory_files": 10,
         "dir": "/app/memories",
-        "immediate_tokens": 25000,
+        "immediate_tokens": 50000,
         "max_items_per_section": {
             "preferences": 5,
             "concerns": 5,

@@ -2,6 +2,7 @@
 Audio Device Management
 Microphone and speaker device control for audio playback
 """
+import asyncio
 import subprocess
 import logging
 import tempfile
@@ -35,43 +36,130 @@ class AudioDevice:
         self._stream_thread: Optional[threading.Thread] = None
         self._stream_queue: Optional[queue.Queue] = None
         self._stream_lock = threading.Lock()
+
+        # Async playback state (for barge-in support)
+        self._playback_process: Optional[subprocess.Popen] = None
+        self._playback_lock = threading.Lock()
         
         self.logger.info("Audio device initialized: speaker=%s, mic=%s", self.speaker_device, self.mic_device)
     
     def play_file(self, file_path: str) -> bool:
         """
         Play audio file through speaker
-        
+
         Args:
             file_path: Path to audio file to play
-            
+
         Returns:
             True if playback succeeded, False otherwise
         """
-        # Apply volume adjustment if needed
-        if self.volume != 1.0:
-            adjusted_file = self._adjust_volume(file_path)
-            if adjusted_file:
-                file_path = adjusted_file
-            else:
-                self.logger.warning("Volume adjustment failed. Playing original file.")
-        
+        adjusted_file = None
+
         try:
+            # Apply volume adjustment if needed
+            if self.volume != 1.0:
+                adjusted_file = self._adjust_volume(file_path)
+                if adjusted_file:
+                    file_path = adjusted_file
+                else:
+                    self.logger.warning("Volume adjustment failed. Playing original file.")
+
             # Use the configured device directly
             cmd = ['aplay', '-D', self.speaker_device, file_path]
             result = subprocess.run(cmd, capture_output=True, text=True)
-            
+
             if result.returncode == 0:
                 self.logger.debug("Audio playback successful: %s", self.speaker_device)
                 return True
             else:
                 self.logger.error("Audio playback failed (%s): %s", self.speaker_device, result.stderr)
                 return False
-                
+
         except Exception as e:
             self.logger.error("Audio playback error (%s): %s", self.speaker_device, e)
             return False
-    
+
+        finally:
+            if adjusted_file and os.path.exists(adjusted_file):
+                try:
+                    os.remove(adjusted_file)
+                except OSError:
+                    pass
+
+    async def play_file_async(self, file_path: str) -> bool:
+        """
+        Play audio file asynchronously for barge-in support.
+
+        Wraps blocking aplay subprocess in asyncio.to_thread() to enable
+        concurrent VAD monitoring during playback. Can be stopped via stop().
+
+        Args:
+            file_path: Path to audio file to play
+
+        Returns:
+            True if playback succeeded, False otherwise
+        """
+        return await asyncio.to_thread(self._play_file_blocking, file_path)
+
+    def _play_file_blocking(self, file_path: str) -> bool:
+        """
+        Internal blocking playback with process tracking for barge-in.
+
+        Args:
+            file_path: Path to audio file to play
+
+        Returns:
+            True if playback succeeded, False otherwise
+        """
+        adjusted_file = None
+
+        try:
+            # Apply volume adjustment if needed
+            if self.volume != 1.0:
+                adjusted_file = self._adjust_volume(file_path)
+                if adjusted_file:
+                    file_path = adjusted_file
+                else:
+                    self.logger.warning("Volume adjustment failed. Playing original file.")
+
+            cmd = ['aplay', '-D', self.speaker_device, file_path]
+
+            with self._playback_lock:
+                self._playback_process = subprocess.Popen(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+                )
+
+            # Wait for playback to complete
+            _, stderr = self._playback_process.communicate()
+            returncode = self._playback_process.returncode
+
+            with self._playback_lock:
+                self._playback_process = None
+
+            if returncode == 0:
+                self.logger.debug("Async audio playback successful: %s", self.speaker_device)
+                return True
+            elif returncode == -15:  # SIGTERM - stopped by stop()
+                self.logger.debug("Audio playback stopped by barge-in")
+                return False
+            else:
+                self.logger.error("Async audio playback failed (%s): %s",
+                                  self.speaker_device, stderr.decode('utf-8', errors='ignore'))
+                return False
+
+        except Exception as e:
+            self.logger.error("Async audio playback error (%s): %s", self.speaker_device, e)
+            with self._playback_lock:
+                self._playback_process = None
+            return False
+
+        finally:
+            if adjusted_file and os.path.exists(adjusted_file):
+                try:
+                    os.remove(adjusted_file)
+                except OSError:
+                    pass
+
     def play_bytes(self, audio_data: bytes) -> bool:
         """
         Play raw audio data directly (for real-time streaming)
@@ -299,15 +387,26 @@ class AudioDevice:
     def stop(self) -> None:
         """
         Stop current audio playback for barge-in support.
-        Kills any running aplay processes.
+        Terminates tracked playback process and streaming playback.
         """
         try:
+            # Stop the tracked playback process
+            with self._playback_lock:
+                if self._playback_process and self._playback_process.poll() is None:
+                    self._playback_process.terminate()
+                    try:
+                        self._playback_process.wait(timeout=0.5)
+                        self.logger.debug("Tracked playback process terminated")
+                    except subprocess.TimeoutExpired:
+                        self._playback_process.kill()
+                        self._playback_process.wait(timeout=0.5)
+                        self.logger.debug("Tracked playback process killed")
+                    self._playback_process = None
+
             # Stop streaming if active
             self.stop_streaming_playback()
-            
-            # Kill all aplay processes to stop current playback
-            subprocess.run(['pkill', '-f', 'aplay'], capture_output=True)
-            self.logger.debug("Audio playback stopped (aplay processes terminated)")
+
+            self.logger.debug("Audio playback stopped")
         except Exception as e:
             self.logger.debug("Error stopping audio playback: %s", e)
     
