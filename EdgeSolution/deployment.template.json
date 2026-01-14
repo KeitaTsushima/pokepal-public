@@ -128,7 +128,7 @@
                 "value": "plughw:0,0"
               },
               "PLAYBACK_DEVICE": {
-                "value": "plughw:0,0"
+                "value": "plughw:2,0"
               },
               "CAPTURE_DEVICE": {
                 "value": "plughw:3,0"
@@ -165,6 +165,9 @@
               },
               "AZURE_SPEECH_SECRET_NAME": {
                 "value": "azure-speech-key"
+              },
+              "DISPLAY_HOST": {
+                "value": "172.18.0.1"
               }
             }
           },

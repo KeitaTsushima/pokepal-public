@@ -10,37 +10,41 @@ from typing import Optional
 from domain.audio_interfaces import AudioCaptureProtocol, SpeechToTextProtocol, AudioOutputProtocol
 from domain.conversation import MessageRole
 from .conversation_service import ConversationService
+from adapters.output.display_state import DisplayStatePublisher
 
 
 class VoiceInteractionService:
     """Application service that manages voice interactions"""
     
-    def __init__(self, 
+    def __init__(self,
                  conversation_service: ConversationService,
                  audio_capture: AudioCaptureProtocol,
                  speech_to_text: SpeechToTextProtocol,
                  audio_output: AudioOutputProtocol,
+                 display_publisher: DisplayStatePublisher,
                  no_voice_sleep_threshold: int = 5):  # TODO: Change to retrieve from defaults.json
         """
         Initialize
-        
+
         Args:
             conversation_service: Conversation processing service
             audio_capture: Audio capture interface
             speech_to_text: Speech recognition interface
             audio_output: Audio output interface (text-to-speech)
+            display_publisher: Display state publisher for visual feedback
             no_voice_sleep_threshold: Threshold for entering sleep mode on silence (#TODO: Planned to retrieve from ConfigLoader)
         """
         self.conversation_service = conversation_service
         self.audio_capture = audio_capture
         self.speech_to_text = speech_to_text
         self.audio_output = audio_output
-        
+        self.display_publisher = display_publisher
+
         self.logger = logging.getLogger(__name__)
-        
+
         self.running = True
         self.no_voice_count = 0
-        
+
         self.no_voice_sleep_threshold = no_voice_sleep_threshold
         
     
@@ -73,12 +77,17 @@ class VoiceInteractionService:
     
     async def process_conversation(self) -> None:
         """Process one cycle of voice input → recognition → conversation → voice output"""
+        self._publish_display_state("idle")
         self.logger.debug("Waiting for voice input...")
         audio_file = self.audio_capture.capture_audio()
         if not audio_file:
             self._handle_no_voice()
             return
-        
+
+        # TODO: Ideally, "listening" should be published when VAD detects voice,
+        # not after capture_audio() completes. Requires AudioCaptureService callback.
+        self._publish_display_state("listening")
+
         # Barge-in support: Stop current TTS when user starts speaking
         self.audio_output.stop_audio_for_barge_in()
         
@@ -116,6 +125,8 @@ class VoiceInteractionService:
             await self._announce_farewell(user_text)
             return
         
+        # System is responding
+        self._publish_display_state("speaking")
         self.logger.info("LLM streaming processing start")
         llm_start = time.monotonic()
         first_segment_time = None
@@ -256,4 +267,11 @@ class VoiceInteractionService:
                 self.logger.debug(f"Deleted audio file: {audio_file}")
         except OSError as e:
             self.logger.warning(f"Audio file deletion error: {e}")
+
+    def _publish_display_state(self, state: str) -> None:
+        """Publish display state for visual feedback (fails silently)."""
+        try:
+            self.display_publisher.publish(state)
+        except Exception:
+            pass  # Display failure should not interrupt voice interaction
     
